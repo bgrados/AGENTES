@@ -1,17 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { EmptyState } from "@/components/shared/empty-state"
-import { Users, Plus, Pencil, Trash2, Shield, ShieldCheck, UserCog, User, AlertTriangle } from "lucide-react"
+import { Users, Plus, Pencil, Trash2, Camera, Shield, ShieldCheck, UserCog, User, AlertTriangle } from "lucide-react"
 
 interface Usuario {
   id: string
@@ -23,6 +24,7 @@ interface Usuario {
   apellido: string
   email: string
   telefono: string | null
+  foto_url: string | null
   activo: boolean
   roles?: { nombre: string }
   empresas?: { nombre: string }
@@ -49,7 +51,10 @@ export default function UsuariosPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [eliminando, setEliminando] = useState<Usuario | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", activo: true })
+  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
+  const [fotoFile, setFotoFile] = useState<File | null>(null)
+  const [subiendo, setSubiendo] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     Promise.all([cargarUsuarios(), cargarRoles(), cargarEmpresas()])
@@ -76,7 +81,8 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", activo: true })
+    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
+    setFotoFile(null)
     setDialogOpen(true)
   }
 
@@ -90,15 +96,37 @@ export default function UsuariosPage() {
       apellido: u.apellido,
       email: u.email,
       telefono: u.telefono || "",
+      foto_url: u.foto_url || "",
       activo: u.activo,
     })
+    setFotoFile(null)
     setDialogOpen(true)
   }
 
   async function guardar() {
     if (!form.nombre.trim() || !form.apellido.trim() || !form.email.trim() || !form.empresa_id || !form.rol_id) return
     const supabaseAny = supabase as any
-    const payload = { ...form, codigo: form.codigo || null, telefono: form.telefono || null }
+    let fotoUrl = form.foto_url
+
+    if (fotoFile) {
+      setSubiendo(true)
+      const fileName = `${Date.now()}-${fotoFile.name}`
+      const { data: uploadData, error: uploadErr } = await supabaseAny.storage
+        .from("agent-photos")
+        .upload(fileName, fotoFile, { upsert: true })
+      if (uploadErr) {
+        alert("Error al subir foto: " + uploadErr.message)
+        setSubiendo(false)
+        return
+      }
+      const { data: { publicUrl } } = supabaseAny.storage
+        .from("agent-photos")
+        .getPublicUrl(fileName)
+      fotoUrl = publicUrl
+      setSubiendo(false)
+    }
+
+    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null }
 
     if (editando) {
       await supabaseAny.from("usuarios").update(payload).eq("id", editando.id)
@@ -106,6 +134,7 @@ export default function UsuariosPage() {
       await supabaseAny.from("usuarios").insert(payload)
     }
 
+    setFotoFile(null)
     setDialogOpen(false)
     cargarUsuarios()
   }
@@ -149,6 +178,35 @@ export default function UsuariosPage() {
               <DialogTitle>{editando ? "Editar Usuario" : "Nuevo Usuario"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {editando && (
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={fotoFile ? URL.createObjectURL(fotoFile) : form.foto_url || undefined} />
+                    <AvatarFallback className="bg-primary/10">
+                      <User className="h-6 w-6" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={subiendo}>
+                      <Camera className="mr-2 h-4 w-4" />
+                      {form.foto_url ? "Cambiar Foto" : "Subir Foto"}
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) setFotoFile(file)
+                      }}
+                    />
+                    {fotoFile && (
+                      <p className="text-xs text-muted-foreground mt-1">{fotoFile.name}</p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Nombre</Label>
