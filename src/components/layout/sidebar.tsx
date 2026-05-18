@@ -56,6 +56,12 @@ const navItems: NavItem[] = [
     roles: ["agente", "jefe_grupo"],
   },
   {
+    label: "Mi QR",
+    href: "/agente/mi-qr",
+    icon: QrCode,
+    roles: ["agente", "jefe_grupo"],
+  },
+  {
     label: "Dashboard",
     href: "/supervisor",
     icon: LayoutDashboard,
@@ -83,6 +89,12 @@ const navItems: NavItem[] = [
     label: "Reportes",
     href: "/supervisor/reportes",
     icon: FileText,
+    roles: ["supervisor", "jefe_grupo"],
+  },
+  {
+    label: "Sedes",
+    href: "/supervisor/sedes",
+    icon: Building2,
     roles: ["supervisor", "jefe_grupo"],
   },
   {

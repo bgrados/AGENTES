@@ -28,11 +28,8 @@ export default function AgenteDashboard() {
   async function cargarDatos() {
     const supabaseAny = supabase as any
 
-    const { data: userData } = await supabaseAny.from("usuarios").select("id").eq("auth_uid", usuario!.id).maybeSingle()
-    if (!userData) { setCargando(false); return }
-
-    const { data: agente } = await supabaseAny.from("agentes").select("*, sedes!sede_principal(nombre)").eq("usuario_id", userData.id).maybeSingle()
-    if (!agente) { setCargando(false); return }
+    const { data: agente } = await supabaseAny.from("agentes").select("*, sedes!sede_principal(nombre)").eq("usuario_id", usuario!.id).maybeSingle()
+    if (!agente || !agente.id) { setCargando(false); return }
 
     setAgenteId(agente.id)
 

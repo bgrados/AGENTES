@@ -68,9 +68,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         email: userData.email,
         telefono: userData.telefono,
         foto_url: userData.foto_url,
+        dni: userData.dni ?? null,
       }
       setUsuario(usuario)
     } else {
+      setUsuario(null)
       setLoading(false)
     }
   }

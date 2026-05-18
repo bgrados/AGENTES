@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
 import { useGPS } from "@/hooks/use-gps"
@@ -35,6 +35,19 @@ export default function AsistenciaPage() {
   const [error, setError] = useState("")
   const [escaneando, setEscaneando] = useState(false)
   const [validandoGPS, setValidandoGPS] = useState(false)
+  const [sedeLat, setSedeLat] = useState<number | null>(null)
+  const [sedeLng, setSedeLng] = useState<number | null>(null)
+  const [sedeRadio, setSedeRadio] = useState<number>(100)
+  const [agenteRecordId, setAgenteRecordId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!usuario) return
+    ;(async () => {
+      const supabaseAny = supabase as any
+      const { data } = await supabaseAny.from("agentes").select("id").eq("usuario_id", usuario.id).maybeSingle()
+      if (data?.id) setAgenteRecordId(data.id)
+    })()
+  }, [usuario])
 
   const handleScan = useCallback(async (codigo: string) => {
     setEscaneando(true)
@@ -65,6 +78,14 @@ export default function AsistenciaPage() {
       setPuestoNombre(puesto.nombre)
       setSedeId(puesto.sedes.id)
       setSedeNombre(puesto.sedes.nombre)
+
+      const { data: sedeGps } = await supabaseAny.from("sedes").select("latitud, longitud, radio_gps").eq("id", puesto.sedes.id).maybeSingle()
+      if (sedeGps) {
+        setSedeLat(sedeGps.latitud)
+        setSedeLng(sedeGps.longitud)
+        setSedeRadio(sedeGps.radio_gps ?? 100)
+      }
+
       setStep("gps")
     } catch {
       setError("Error al validar QR")
@@ -86,8 +107,21 @@ export default function AsistenciaPage() {
       }
       setGpsCoords(coords)
 
+      const errores: string[] = []
+
       if (pos.coords.accuracy > GPS_CONFIG.PRECISION_MINIMA) {
-        setError(`Precisión GPS baja: ${Math.round(pos.coords.accuracy)}m. Acércate a la sede.`)
+        errores.push(`Precisión GPS baja: ${Math.round(pos.coords.accuracy)}m`)
+      }
+
+      if (sedeLat !== null && sedeLng !== null) {
+        const distancia = validarDistancia(coords.lat, coords.lng, sedeLat, sedeLng)
+        if (distancia > sedeRadio) {
+          errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeRadio}m)`)
+        }
+      }
+
+      if (errores.length > 0) {
+        setError(errores.join(". "))
         setGpsValidado(false)
         return
       }
@@ -99,18 +133,18 @@ export default function AsistenciaPage() {
     } finally {
       setValidandoGPS(false)
     }
-  }, [obtenerPosicion])
+  }, [obtenerPosicion, validarDistancia, sedeLat, sedeLng, sedeRadio])
 
   const handleFoto = useCallback(async () => {
     setStep("confirmar")
   }, [])
 
   const handleConfirmar = useCallback(async () => {
-    if (!usuario || !gpsCoords) return
+    if (!usuario || !gpsCoords || !agenteRecordId) return
 
     const result = await marcar({
       tipo: "entrada",
-      agente_id: usuario.id,
+      agente_id: agenteRecordId,
       sede_id: sedeId,
       puesto_id: puestoId ?? undefined,
       latitud: gpsCoords.lat,

@@ -65,10 +65,7 @@ export default function HistorialPage() {
 
   async function cargarAsistencias() {
     const supabaseAny = supabase as any
-    const { data: usuarioData } = await supabaseAny.from("usuarios").select("id").eq("auth_uid", usuario!.id).maybeSingle()
-    if (!usuarioData) return
-
-    const { data: agente } = await supabaseAny.from("agentes").select("id").eq("usuario_id", usuarioData.id).maybeSingle()
+    const { data: agente } = await supabaseAny.from("agentes").select("id").eq("usuario_id", usuario!.id).maybeSingle()
     if (!agente) return
 
     const fechaLimite = new Date()
@@ -86,10 +83,7 @@ export default function HistorialPage() {
 
   async function cargarReportes() {
     const supabaseAny = supabase as any
-    const { data: usuarioData } = await supabaseAny.from("usuarios").select("id").eq("auth_uid", usuario!.id).maybeSingle()
-    if (!usuarioData) return
-
-    const { data: agente } = await supabaseAny.from("agentes").select("id").eq("usuario_id", usuarioData.id).maybeSingle()
+    const { data: agente } = await supabaseAny.from("agentes").select("id").eq("usuario_id", usuario!.id).maybeSingle()
     if (!agente) return
 
     const fechaLimite = new Date()

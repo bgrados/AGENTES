@@ -21,6 +21,7 @@ export interface UsuarioSession {
   email: string
   telefono: string | null
   foto_url: string | null
+  dni: string | null
 }
 
 export interface Coordenadas {

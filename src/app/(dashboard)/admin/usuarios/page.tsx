@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { EmptyState } from "@/components/shared/empty-state"
-import { Users, Plus, Pencil, Shield, ShieldCheck, UserCog, User } from "lucide-react"
+import { Users, Plus, Pencil, Trash2, Shield, ShieldCheck, UserCog, User, AlertTriangle } from "lucide-react"
 
 interface Usuario {
   id: string
@@ -46,6 +46,9 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editando, setEditando] = useState<Usuario | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [eliminando, setEliminando] = useState<Usuario | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", activo: true })
 
   useEffect(() => {
@@ -105,6 +108,23 @@ export default function UsuariosPage() {
 
     setDialogOpen(false)
     cargarUsuarios()
+  }
+
+  async function confirmarEliminar() {
+    if (!eliminando) return
+    setDeleting(true)
+    const supabaseAny = supabase as any
+    await supabaseAny.from("agentes").delete().eq("usuario_id", eliminando.id)
+    await supabaseAny.from("usuarios").delete().eq("id", eliminando.id)
+    setDeleteDialogOpen(false)
+    setEliminando(null)
+    setDeleting(false)
+    cargarUsuarios()
+  }
+
+  function abrirEliminar(u: Usuario) {
+    setEliminando(u)
+    setDeleteDialogOpen(true)
   }
 
   const rolNombre = (r: string | undefined) => r || "sin rol"
@@ -180,6 +200,29 @@ export default function UsuariosPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                Confirmar Eliminación
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              ¿Estás seguro de eliminar a <strong>{eliminando?.nombre} {eliminando?.apellido}</strong>?
+              {eliminando?.roles?.nombre === "agente" && (
+                <> También se eliminará su registro de agente.</>
+              )}
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>Cancelar</Button>
+              <Button variant="destructive" onClick={confirmarEliminar} disabled={deleting}>
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {usuarios.length === 0 ? (
@@ -212,6 +255,9 @@ export default function UsuariosPage() {
                     <Badge variant={u.activo ? "success" : "secondary"}>{u.activo ? "Activo" : "Inactivo"}</Badge>
                     <Button variant="ghost" size="sm" onClick={() => abrirEditar(u)}>
                       <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => abrirEliminar(u)}>
+                      <Trash2 className="h-3 w-3 text-red-500" />
                     </Button>
                   </div>
                 </div>
