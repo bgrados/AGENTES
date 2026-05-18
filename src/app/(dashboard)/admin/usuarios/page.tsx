@@ -162,6 +162,9 @@ export default function UsuariosPage() {
 
   return (
     <div className="space-y-6">
+      <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold text-lg">
+        VERSION 2 - FOTO Y ELIMINAR ACTIVADOS
+      </div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Usuarios</h1>
