@@ -3,11 +3,11 @@
 -- Version: 1.0.0
 -- ============================================
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 1. EMPRESAS
 CREATE TABLE empresas (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre      VARCHAR(255) NOT NULL,
   ruc         VARCHAR(11) UNIQUE,
   direccion   TEXT,
@@ -20,7 +20,7 @@ CREATE TABLE empresas (
 
 -- 2. SEDES
 CREATE TABLE sedes (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   empresa_id  UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
   nombre      VARCHAR(255) NOT NULL,
   direccion   TEXT,
@@ -35,7 +35,7 @@ CREATE INDEX idx_sedes_empresa ON sedes(empresa_id);
 
 -- 3. PUESTOS
 CREATE TABLE puestos (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sede_id       UUID NOT NULL REFERENCES sedes(id) ON DELETE CASCADE,
   nombre        VARCHAR(255) NOT NULL,
   codigo        VARCHAR(20) UNIQUE NOT NULL,
@@ -54,7 +54,7 @@ CREATE INDEX idx_puestos_sede ON puestos(sede_id);
 
 -- 4. ROLES
 CREATE TABLE roles (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre      VARCHAR(50) UNIQUE NOT NULL,
   descripcion TEXT,
   created_at  TIMESTAMPTZ DEFAULT NOW()
@@ -62,7 +62,7 @@ CREATE TABLE roles (
 
 -- 5. USUARIOS
 CREATE TABLE usuarios (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   auth_uid      UUID UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
   empresa_id    UUID NOT NULL REFERENCES empresas(id),
   rol_id        UUID NOT NULL REFERENCES roles(id),
@@ -81,7 +81,7 @@ CREATE INDEX idx_usuarios_rol ON usuarios(rol_id);
 
 -- 6. AGENTES
 CREATE TABLE agentes (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id      UUID UNIQUE NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   codigo          VARCHAR(20) UNIQUE NOT NULL,
   turno_asignado  VARCHAR(10) NOT NULL CHECK (turno_asignado IN ('dia', 'noche')),
@@ -95,7 +95,7 @@ CREATE TABLE agentes (
 
 -- 7. SUPERVISORES
 CREATE TABLE supervisores (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id  UUID UNIQUE NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   sedes_ids   UUID[] NOT NULL DEFAULT '{}',
   created_at  TIMESTAMPTZ DEFAULT NOW()
@@ -103,7 +103,7 @@ CREATE TABLE supervisores (
 
 -- 8. JEFES_GRUPO
 CREATE TABLE jefes_grupo (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id  UUID UNIQUE NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   sede_id     UUID NOT NULL REFERENCES sedes(id),
   turno       VARCHAR(10) NOT NULL CHECK (turno IN ('dia', 'noche')),
@@ -112,7 +112,7 @@ CREATE TABLE jefes_grupo (
 
 -- 9. PROGRAMACION PERSONAL
 CREATE TABLE programacion_personal (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agente_id     UUID NOT NULL REFERENCES agentes(id),
   sede_id       UUID NOT NULL REFERENCES sedes(id),
   puesto_id     UUID REFERENCES puestos(id),
@@ -129,7 +129,7 @@ CREATE INDEX idx_programacion_agente ON programacion_personal(agente_id);
 
 -- 10. ASISTENCIA
 CREATE TABLE asistencia (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agente_id     UUID NOT NULL REFERENCES agentes(id),
   sede_id       UUID NOT NULL REFERENCES sedes(id),
   puesto_id     UUID REFERENCES puestos(id),
@@ -154,7 +154,7 @@ CREATE INDEX idx_asistencia_sede ON asistencia(sede_id);
 
 -- 11. RELEVOS
 CREATE TABLE relevos (
-  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sede_id             UUID NOT NULL REFERENCES sedes(id),
   puesto_id           UUID REFERENCES puestos(id),
   agente_saliente_id  UUID REFERENCES agentes(id),
@@ -172,7 +172,7 @@ CREATE INDEX idx_relevos_sede ON relevos(sede_id);
 
 -- 12. REPORTES
 CREATE TABLE reportes (
-  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agente_id         UUID NOT NULL REFERENCES agentes(id),
   sede_id           UUID NOT NULL REFERENCES sedes(id),
   puesto_id         UUID REFERENCES puestos(id),
@@ -195,7 +195,7 @@ CREATE INDEX idx_reportes_sede ON reportes(sede_id);
 
 -- 13. INCIDENCIAS
 CREATE TABLE incidencias (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agente_id     UUID REFERENCES agentes(id),
   sede_id       UUID NOT NULL REFERENCES sedes(id),
   tipo          VARCHAR(30) NOT NULL CHECK (tipo IN ('tardanza', 'falta', 'gps_invalido', 'qr_invalido', 'reporte_faltante', 'cobertura', 'otro')),
@@ -213,7 +213,7 @@ CREATE INDEX idx_incidencias_fecha ON incidencias(fecha);
 
 -- 14. HISTORIAL UBICACIONES
 CREATE TABLE historial_ubicaciones (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   agente_id   UUID NOT NULL REFERENCES agentes(id),
   latitud     DOUBLE PRECISION NOT NULL,
   longitud    DOUBLE PRECISION NOT NULL,
@@ -229,7 +229,7 @@ CREATE INDEX idx_ubicaciones_tiempo ON historial_ubicaciones(fecha_hora DESC);
 
 -- 15. GRUPOS WHATSAPP
 CREATE TABLE grupos_whatsapp (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sede_id       UUID NOT NULL REFERENCES sedes(id),
   turno         VARCHAR(10) NOT NULL CHECK (turno IN ('dia', 'noche')),
   numero_grupo  VARCHAR(50) NOT NULL,
@@ -241,7 +241,7 @@ CREATE TABLE grupos_whatsapp (
 
 -- 16. NOTIFICACIONES PUSH
 CREATE TABLE notificaciones_push (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id      UUID NOT NULL REFERENCES usuarios(id),
   subscription    JSONB NOT NULL,
   dispositivo     VARCHAR(50),
@@ -252,7 +252,7 @@ CREATE TABLE notificaciones_push (
 
 -- 17. LOG NOTIFICACIONES
 CREATE TABLE log_notificaciones (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id  UUID NOT NULL REFERENCES usuarios(id),
   titulo      VARCHAR(255) NOT NULL,
   mensaje     TEXT,
@@ -266,7 +266,7 @@ CREATE INDEX idx_log_notif_leida ON log_notificaciones(leida) WHERE leida = FALS
 
 -- 18. ARCHIVOS FOTOS
 CREATE TABLE archivos_fotos (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   bucket      VARCHAR(50) NOT NULL,
   ruta        TEXT NOT NULL,
   nombre      VARCHAR(255),
@@ -278,7 +278,7 @@ CREATE TABLE archivos_fotos (
 
 -- 19. AUDITORIA LOGS
 CREATE TABLE auditoria_logs (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id      UUID REFERENCES usuarios(id),
   accion          VARCHAR(50) NOT NULL,
   tabla           VARCHAR(100),
@@ -294,7 +294,7 @@ CREATE INDEX idx_auditoria_fecha ON auditoria_logs(created_at);
 
 -- 20. SYNC QUEUE
 CREATE TABLE sync_queue (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id      UUID NOT NULL,
   operacion       VARCHAR(20) NOT NULL CHECK (operacion IN ('INSERT', 'UPDATE', 'DELETE')),
   tabla           VARCHAR(100) NOT NULL,
@@ -312,7 +312,7 @@ CREATE INDEX idx_sync_usuario ON sync_queue(usuario_id);
 
 -- 21. CONFIGURACION
 CREATE TABLE configuracion (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   empresa_id    UUID NOT NULL REFERENCES empresas(id),
   clave         VARCHAR(100) NOT NULL,
   valor         JSONB NOT NULL,
