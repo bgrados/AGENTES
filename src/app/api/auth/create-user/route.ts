@@ -36,6 +36,19 @@ export async function POST(request: Request) {
     })
 
     if (createErr) {
+      if (createErr.message?.includes("already registered")) {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?filter=email%3D${encodeURIComponent(email)}`,
+          { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}` } },
+        )
+        const users = await res.json()
+        const existingUid = Array.isArray(users) ? users[0]?.id : users?.users?.[0]?.id
+        if (existingUid) {
+          await admin.auth.admin.updateUserById(existingUid, { password })
+          await supabaseAny.from("usuarios").update({ auth_uid: existingUid }).eq("id", usuario_id)
+          return NextResponse.json({ success: true, uid: existingUid, updated: true })
+        }
+      }
       return NextResponse.json({ error: createErr.message }, { status: 400 })
     }
 
