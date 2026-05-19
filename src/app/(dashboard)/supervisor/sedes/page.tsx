@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
+import { useJefeSedes } from "@/hooks/use-jefe-sedes"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +33,7 @@ interface CsvRow {
 export default function SupervisorSedesPage() {
   const { supabase } = useSupabase()
   const { usuario } = useAuthStore()
+  const { sedeIds, esJefe, cargando: cargandoJefe } = useJefeSedes()
   const [sedes, setSedes] = useState<Sede[]>([])
   const [loading, setLoading] = useState(true)
   const [importando, setImportando] = useState(false)
@@ -39,12 +41,18 @@ export default function SupervisorSedesPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (usuario) cargarSedes()
-  }, [usuario])
+    if (usuario && !cargandoJefe) cargarSedes()
+  }, [usuario, cargandoJefe, sedeIds])
 
   async function cargarSedes() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("sedes").select("*").eq("empresa_id", usuario!.empresa_id).order("nombre")
+    let query = supabaseAny.from("sedes").select("*").eq("empresa_id", usuario!.empresa_id)
+
+    if (esJefe && sedeIds.length > 0) {
+      query = query.in("id", sedeIds)
+    }
+
+    const { data } = await query.order("nombre")
     if (data) setSedes(data)
     setLoading(false)
   }

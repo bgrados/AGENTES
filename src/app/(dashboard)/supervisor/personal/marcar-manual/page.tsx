@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
+import { useJefeSedes } from "@/hooks/use-jefe-sedes"
 import { useGPS } from "@/hooks/use-gps"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,7 +19,10 @@ export default function MarcarManualPage() {
   const { usuario, isLoading } = useAuthStore()
   const { supabase } = useSupabase()
   const { gpsActivo, obtenerPosicion } = useGPS()
+  const { sedeIds, esJefe, cargando: cargandoJefe } = useJefeSedes()
 
+  const [agentes, setAgentes] = useState<{ id: string; label: string }[]>([])
+  const [sedes, setSedes] = useState<{ id: string; nombre: string }[]>([])
   const [agenteId, setAgenteId] = useState("")
   const [sedeId, setSedeId] = useState("")
   const [tipo, setTipo] = useState("entrada")
@@ -26,6 +30,53 @@ export default function MarcarManualPage() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const [cargandoDatos, setCargandoDatos] = useState(true)
+
+  useEffect(() => {
+    if (!cargandoJefe && !isLoading) cargarDatos()
+  }, [cargandoJefe, isLoading, sedeIds])
+
+  async function cargarDatos() {
+    const supabaseAny = supabase as any
+
+    let querySedes = supabaseAny.from("sedes").select("id, nombre").eq("activo", true).order("nombre")
+    if (esJefe && sedeIds.length > 0) {
+      querySedes = querySedes.in("id", sedeIds)
+    }
+    const { data: sedesData } = await querySedes
+    if (sedesData) setSedes(sedesData)
+
+    if (esJefe && sedeIds.length > 0) {
+      const { data: rel } = await supabaseAny
+        .from("agentes_sedes")
+        .select("agente_id, agentes!inner(id, codigo, usuarios!inner(nombre, apellido))")
+        .in("sede_id", sedeIds)
+        .eq("activo", true)
+
+      if (rel) {
+        const unique = new Map<string, { id: string; label: string }>()
+        for (const r of rel) {
+          if (r.agentes && !unique.has(r.agente_id)) {
+            const a = r.agentes as any
+            unique.set(r.agente_id, { id: a.id, label: `${a.codigo} - ${a.usuarios.nombre} ${a.usuarios.apellido}` })
+          }
+        }
+        setAgentes(Array.from(unique.values()))
+      }
+    } else {
+      const { data: agentesData } = await supabaseAny
+        .from("agentes")
+        .select("id, codigo, usuarios!inner(nombre, apellido)")
+        .eq("activo", true)
+        .order("codigo")
+
+      if (agentesData) {
+        setAgentes(agentesData.map((a: any) => ({ id: a.id, label: `${a.codigo} - ${a.usuarios.nombre} ${a.usuarios.apellido}` })))
+      }
+    }
+
+    setCargandoDatos(false)
+  }
 
   const handleSubmit = useCallback(async () => {
     if (!usuario || !agenteId || !sedeId) {
@@ -68,7 +119,7 @@ export default function MarcarManualPage() {
     }
   }, [usuario, agenteId, sedeId, tipo, observaciones, gpsActivo, obtenerPosicion, supabase])
 
-  if (isLoading) return <LoadingScreen />
+  if (isLoading || cargandoJefe || cargandoDatos) return <LoadingScreen />
 
   if (success) {
     return (
@@ -120,7 +171,13 @@ export default function MarcarManualPage() {
                 <SelectValue placeholder="Seleccionar agente" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="placeholder">Selecciona un agente...</SelectItem>
+                {agentes.length === 0 ? (
+                  <SelectItem value="placeholder" disabled>No hay agentes disponibles</SelectItem>
+                ) : (
+                  agentes.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -132,7 +189,13 @@ export default function MarcarManualPage() {
                 <SelectValue placeholder="Seleccionar sede" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="placeholder">Selecciona una sede...</SelectItem>
+                {sedes.length === 0 ? (
+                  <SelectItem value="placeholder" disabled>No hay sedes disponibles</SelectItem>
+                ) : (
+                  sedes.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.nombre}</SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>

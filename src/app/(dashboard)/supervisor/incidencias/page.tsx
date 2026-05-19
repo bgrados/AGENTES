@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
+import { useJefeSedes } from "@/hooks/use-jefe-sedes"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,18 +39,25 @@ const tipoBadge: Record<string, { label: string; variant: "destructive" | "warni
 
 export default function IncidenciasPage() {
   const { supabase } = useSupabase()
+  const { sedeIds, esJefe, cargando: cargandoJefe } = useJefeSedes()
   const [incidencias, setIncidencias] = useState<Incidencia[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Incidencia | null>(null)
   const [tab, setTab] = useState("pendientes")
 
   useEffect(() => {
-    cargarIncidencias()
-  }, [])
+    if (!cargandoJefe) cargarIncidencias()
+  }, [cargandoJefe, sedeIds])
 
   async function cargarIncidencias() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("incidencias").select("*").order("created_at", { ascending: false })
+    let query = supabaseAny.from("incidencias").select("*")
+
+    if (esJefe && sedeIds.length > 0) {
+      query = query.in("sede_id", sedeIds)
+    }
+
+    const { data } = await query.order("created_at", { ascending: false })
     if (data) setIncidencias(data)
     setLoading(false)
   }
@@ -68,7 +76,7 @@ export default function IncidenciasPage() {
     return true
   })
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
+  if (loading || cargandoJefe) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
 
   const pendientesCount = incidencias.filter(i => i.estado === "pendiente" || i.estado === "investigacion").length
 

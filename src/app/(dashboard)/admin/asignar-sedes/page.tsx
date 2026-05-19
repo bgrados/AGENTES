@@ -31,6 +31,7 @@ interface Asignacion {
   sede_id: string
   tipo: "principal" | "apoyo"
   activo: boolean
+  es_jefe_grupo: boolean
   sedes: {
     nombre: string
     codigo: string
@@ -52,7 +53,7 @@ export default function AsignarSedesPage() {
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [agenteSeleccionado, setAgenteSeleccionado] = useState<AgenteInfo | null>(null)
-  const [form, setForm] = useState({ sede_id: "", tipo: "apoyo" })
+  const [form, setForm] = useState({ sede_id: "", tipo: "apoyo", es_jefe_grupo: false })
   const [guardando, setGuardando] = useState(false)
   const [guardarError, setGuardarError] = useState("")
 
@@ -91,7 +92,7 @@ export default function AsignarSedesPage() {
 
   function abrirAsignar(agente: AgenteInfo) {
     setAgenteSeleccionado(agente)
-    setForm({ sede_id: "", tipo: "apoyo" })
+    setForm({ sede_id: "", tipo: "apoyo", es_jefe_grupo: false })
     setGuardarError("")
     setDialogOpen(true)
   }
@@ -110,11 +111,48 @@ export default function AsignarSedesPage() {
       }
     }
 
+    // Determinar es_jefe_grupo
+    let esJefe = form.es_jefe_grupo
+
+    // Si se marcó como jefe, verificar que no haya otro jefe en la misma sede
+    if (form.es_jefe_grupo) {
+      const { data: jefeExistente } = await supabaseAny
+        .from("agentes_sedes")
+        .select("id, agente_id")
+        .eq("sede_id", form.sede_id)
+        .eq("es_jefe_grupo", true)
+        .eq("activo", true)
+        .maybeSingle()
+
+      if (jefeExistente) {
+        if (jefeExistente.agente_id !== agenteSeleccionado.id) {
+          setGuardarError("Ya existe un jefe de grupo asignado a esta sede. Desmarca al actual primero.")
+          setGuardando(false)
+          return
+        }
+        esJefe = true
+      }
+    }
+
+    // Auto-asignar como jefe si es el primer/único agente en esta sede
+    if (!esJefe) {
+      const { count } = await supabaseAny
+        .from("agentes_sedes")
+        .select("*", { count: "exact", head: true })
+        .eq("sede_id", form.sede_id)
+        .eq("activo", true)
+
+      if (count === 0) {
+        esJefe = true
+      }
+    }
+
     const { error } = await supabaseAny.from("agentes_sedes").insert({
       agente_id: agenteSeleccionado.id,
       sede_id: form.sede_id,
       tipo: form.tipo,
       activo: true,
+      es_jefe_grupo: esJefe,
     })
 
     if (error) {
@@ -214,6 +252,9 @@ export default function AsignarSedesPage() {
                               <Star className="h-3 w-3 text-primary" />
                               <span className="font-medium">{principal.sedes.nombre}</span>
                               <Badge variant="default" className="text-[9px] px-1 py-0 h-4">Principal</Badge>
+                              {principal.es_jefe_grupo && (
+                                <Badge variant="default" className="bg-yellow-500 text-[9px] px-1 py-0 h-4 text-white hover:bg-yellow-600">Jefe</Badge>
+                              )}
                             </div>
                             <button
                               onClick={() => eliminarAsignacion(agente.id, principal.id)}
@@ -229,6 +270,9 @@ export default function AsignarSedesPage() {
                               <Building2 className="h-3 w-3 text-muted-foreground" />
                               <span>{a.sedes.nombre}</span>
                               <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">Apoyo</Badge>
+                              {a.es_jefe_grupo && (
+                                <Badge variant="default" className="bg-yellow-500 text-[9px] px-1 py-0 h-4 text-white hover:bg-yellow-600">Jefe</Badge>
+                              )}
                             </div>
                             <button
                               onClick={() => eliminarAsignacion(agente.id, a.id)}
@@ -289,6 +333,21 @@ export default function AsignarSedesPage() {
                                 </SelectItem>
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div className="flex items-center gap-2 rounded-md border p-3">
+                            <input
+                              type="checkbox"
+                              id="es-jefe"
+                              checked={form.es_jefe_grupo}
+                              onChange={e => setForm(p => ({ ...p, es_jefe_grupo: e.target.checked }))}
+                              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                            <Label htmlFor="es-jefe" className="text-sm cursor-pointer">
+                              Marcar como jefe de grupo
+                              <p className="text-xs text-muted-foreground font-normal">
+                                Solo un jefe de grupo por sede
+                              </p>
+                            </Label>
                           </div>
                         </div>
                         {guardarError && (

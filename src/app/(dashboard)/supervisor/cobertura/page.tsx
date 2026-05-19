@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
+import { useJefeSedes } from "@/hooks/use-jefe-sedes"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -19,30 +20,41 @@ interface CoberturaSede {
 
 export default function CoberturaPage() {
   const { supabase } = useSupabase()
+  const { sedeIds, esJefe, cargando: cargandoJefe } = useJefeSedes()
   const [sedes, setSedes] = useState<CoberturaSede[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ totalSedes: 0, totalPuestos: 0, cubiertos: 0, agentes: 0 })
 
   useEffect(() => {
-    cargarDatos()
-  }, [])
+    if (!cargandoJefe) cargarDatos()
+  }, [cargandoJefe, sedeIds])
 
   async function cargarDatos() {
     const supabaseAny = supabase as any
 
-    const { data: sedesData } = await supabaseAny.from("sedes").select("id, nombre").eq("activo", true)
-    if (!sedesData) { setLoading(false); return }
+    let querySedes = supabaseAny.from("sedes").select("id, nombre").eq("activo", true)
+    if (esJefe && sedeIds.length > 0) {
+      querySedes = querySedes.in("id", sedeIds)
+    }
+    const { data: sedesData } = await querySedes
+    if (!sedesData || sedesData.length === 0) { setLoading(false); return }
 
-    const { data: puestosData } = await supabaseAny.from("puestos").select("id, sede_id, activo").eq("activo", true)
+    let queryPuestos = supabaseAny.from("puestos").select("id, sede_id, activo").eq("activo", true)
+    queryPuestos = queryPuestos.in("sede_id", sedesData.map((s: any) => s.id))
+    const { data: puestosData } = await queryPuestos
 
     const ahora = new Date().toISOString().split("T")[0]
-    const { data: asistenciasHoy } = await supabaseAny
+    let queryAsistencia = supabaseAny
       .from("asistencia")
       .select("agente_id, sede_id")
       .gte("fecha_hora", `${ahora}T00:00:00`)
       .lte("fecha_hora", `${ahora}T23:59:59`)
+    queryAsistencia = queryAsistencia.in("sede_id", sedesData.map((s: any) => s.id))
+    const { data: asistenciasHoy } = await queryAsistencia
 
-    const { data: agentes } = await supabaseAny.from("agentes").select("id, sede_principal").eq("activo", true)
+    let queryAgentes = supabaseAny.from("agentes").select("id, sede_principal").eq("activo", true)
+    queryAgentes = queryAgentes.in("sede_principal", sedesData.map((s: any) => s.id))
+    const { data: agentes } = await queryAgentes
 
     const asistenciasHoySet = new Set(asistenciasHoy?.map((a: any) => a.agente_id) || [])
 
@@ -70,7 +82,7 @@ export default function CoberturaPage() {
     setLoading(false)
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
+  if (loading || cargandoJefe) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
 
   const sinCobertura = stats.totalPuestos - stats.cubiertos
 

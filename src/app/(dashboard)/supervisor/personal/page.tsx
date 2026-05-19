@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
+import { useAuthStore } from "@/stores/auth-store"
+import { useJefeSedes } from "@/hooks/use-jefe-sedes"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,19 +35,45 @@ const diasSemana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
 
 export default function PersonalPage() {
   const { supabase } = useSupabase()
+  const { usuario } = useAuthStore()
+  const { sedeIds, esJefe, cargando: cargandoJefe } = useJefeSedes()
   const router = useRouter()
   const [agentes, setAgentes] = useState<AgenteInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState("")
 
   useEffect(() => {
-    cargarAgentes()
-  }, [])
+    if (!cargandoJefe) cargarAgentes()
+  }, [cargandoJefe, sedeIds, esJefe])
 
   async function cargarAgentes() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("agentes").select("*, usuarios(nombre, apellido, email, telefono, foto_url), sedes!sede_principal(nombre)").order("codigo")
-    if (data) setAgentes(data)
+
+    if (esJefe && sedeIds.length > 0) {
+      const { data: rel } = await supabaseAny
+        .from("agentes_sedes")
+        .select("agente_id, agentes!inner(*, usuarios(nombre, apellido, email, telefono, foto_url), sedes!sede_principal(nombre))")
+        .in("sede_id", sedeIds)
+        .eq("activo", true)
+
+      const unique = new Map<string, any>()
+      if (rel) {
+        for (const r of rel) {
+          if (r.agentes && !unique.has(r.agente_id)) {
+            unique.set(r.agente_id, r.agentes)
+          }
+        }
+      }
+      setAgentes(Array.from(unique.values()))
+    } else {
+      const { data } = await supabaseAny
+        .from("agentes")
+        .select("*, usuarios(nombre, apellido, email, telefono, foto_url), sedes!sede_principal(nombre)")
+        .order("codigo")
+
+      if (data) setAgentes(data)
+    }
+
     setLoading(false)
   }
 
@@ -58,7 +86,7 @@ export default function PersonalPage() {
       a.usuarios.email.toLowerCase().includes(q)
   })
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
+  if (loading || cargandoJefe) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
 
   return (
     <div className="space-y-6">

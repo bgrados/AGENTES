@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
+import { useJefeSedes } from "@/hooks/use-jefe-sedes"
 import { StatCard } from "@/components/shared/stat-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -25,29 +26,46 @@ interface Alertas {
 export default function SupervisorDashboard() {
   const { isLoading } = useAuthStore()
   const { supabase } = useSupabase()
+  const { sedeIds, esJefe, cargando: cargandoJefe } = useJefeSedes()
   const router = useRouter()
   const [stats, setStats] = useState({ agentesActivos: 0, totalAgentes: 0, puestosCubiertos: 0, totalPuestos: 0, incidenciasHoy: 0, incidenciasPendientes: 0, tardanzas: 0 })
   const [alertas, setAlertas] = useState<Alertas[]>([])
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
-    cargarDatos()
-  }, [])
+    if (!cargandoJefe && !isLoading) cargarDatos()
+  }, [cargandoJefe, isLoading, sedeIds])
 
   async function cargarDatos() {
     const supabaseAny = supabase as any
+
+    if (esJefe && sedeIds.length === 0) {
+      setStats({ agentesActivos: 0, totalAgentes: 0, puestosCubiertos: 0, totalPuestos: 0, incidenciasHoy: 0, incidenciasPendientes: 0, tardanzas: 0 })
+      setAlertas([])
+      setCargando(false)
+      return
+    }
+
+    const filterSedes = esJefe && sedeIds.length > 0 ? (q: any) => q.in("sede_id", sedeIds) : (q: any) => q
 
     const { data: agentes } = await supabaseAny.from("agentes").select("id").eq("activo", true)
     const totalAgentes = agentes?.length || 0
 
     const hoy = new Date().toISOString().split("T")[0]
-    const { data: asistenciasHoy } = await supabaseAny.from("asistencia").select("agente_id, sede_id").gte("fecha_hora", `${hoy}T00:00:00`).lte("fecha_hora", `${hoy}T23:59:59`)
+
+    let queryAsistencia = supabaseAny.from("asistencia").select("agente_id, sede_id").gte("fecha_hora", `${hoy}T00:00:00`).lte("fecha_hora", `${hoy}T23:59:59`)
+    queryAsistencia = filterSedes(queryAsistencia)
+    const { data: asistenciasHoy } = await queryAsistencia
     const agentesActivos = new Set(asistenciasHoy?.map((a: any) => a.agente_id) || []).size
 
-    const { data: puestos } = await supabaseAny.from("puestos").select("id").eq("activo", true)
+    let queryPuestos = supabaseAny.from("puestos").select("id").eq("activo", true)
+    queryPuestos = filterSedes(queryPuestos)
+    const { data: puestos } = await queryPuestos
     const totalPuestos = puestos?.length || 0
 
-    const { data: incidencias } = await supabaseAny.from("incidencias").select("id, tipo, descripcion, fecha, estado").gte("fecha", hoy).order("created_at", { ascending: false })
+    let queryIncidencias = supabaseAny.from("incidencias").select("id, tipo, descripcion, fecha, estado").gte("fecha", hoy).order("created_at", { ascending: false })
+    queryIncidencias = filterSedes(queryIncidencias)
+    const { data: incidencias } = await queryIncidencias
     const incidenciasHoy = incidencias?.length || 0
     const incidenciasPendientes = incidencias?.filter((i: any) => i.estado === "pendiente").length || 0
     const tardanzas = incidencias?.filter((i: any) => i.tipo === "tardanza").length || 0
@@ -60,7 +78,7 @@ export default function SupervisorDashboard() {
     setCargando(false)
   }
 
-  if (isLoading || cargando) return <LoadingScreen />
+  if (isLoading || cargando || cargandoJefe) return <LoadingScreen />
 
   return (
     <div className="space-y-6">
