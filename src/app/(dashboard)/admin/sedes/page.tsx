@@ -9,8 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { EmptyState } from "@/components/shared/empty-state"
-import { MapPin, Plus, Pencil, Search, Loader2 } from "lucide-react"
+import { MapPin, Plus, Pencil, Search, Loader2, Users, UserPlus, Trash2, User, Moon } from "lucide-react"
 
 interface Sede {
   id: string

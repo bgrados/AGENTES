@@ -122,6 +122,18 @@ const navItems: NavItem[] = [
     roles: ["admin"],
   },
   {
+    label: "Asignar Sedes",
+    href: "/admin/asignar-sedes",
+    icon: UserCheck,
+    roles: ["admin"],
+  },
+  {
+    label: "QR Agentes",
+    href: "/admin/qr-agentes",
+    icon: QrCode,
+    roles: ["admin"],
+  },
+  {
     label: "Usuarios",
     href: "/admin/usuarios",
     icon: Users,

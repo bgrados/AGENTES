@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
 import { useGPS } from "@/hooks/use-gps"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { MapPin, Camera, QrCode, CheckCircle, XCircle, Loader2, ImageUp } from "lucide-react"
+import { MapPin, Camera, QrCode, CheckCircle, Loader2 } from "lucide-react"
 import { QRScanner } from "@/components/qr/qr-scanner"
 import { PhotoCapture } from "@/components/camera/photo-capture"
 import { useAttendance } from "@/hooks/use-attendance"
@@ -20,13 +20,12 @@ type Step = "scanner" | "gps" | "foto" | "confirmar" | "completado"
 export default function AsistenciaPage() {
   const { usuario, isLoading: authLoading } = useAuthStore()
   const { supabase } = useSupabase()
-  const { gpsActivo, ubicacionActual, validarDistancia, obtenerPosicion } = useGPS()
+  const { gpsActivo, validarDistancia, obtenerPosicion } = useGPS()
   const { marcar, marcando } = useAttendance()
 
   const [step, setStep] = useState<Step>("scanner")
   const [qrValido, setQrValido] = useState(false)
-  const [puestoId, setPuestoId] = useState<string | null>(null)
-  const [puestoNombre, setPuestoNombre] = useState<string>("")
+  const [codigoEscanado, setCodigoEscanado] = useState("")
   const [sedeId, setSedeId] = useState<string>("")
   const [sedeNombre, setSedeNombre] = useState<string>("")
   const [gpsCoords, setGpsCoords] = useState<Coordenadas | null>(null)
@@ -39,15 +38,7 @@ export default function AsistenciaPage() {
   const [sedeLng, setSedeLng] = useState<number | null>(null)
   const [sedeRadio, setSedeRadio] = useState<number>(100)
   const [agenteRecordId, setAgenteRecordId] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!usuario) return
-    ;(async () => {
-      const supabaseAny = supabase as any
-      const { data } = await supabaseAny.from("agentes").select("id").eq("usuario_id", usuario.id).maybeSingle()
-      if (data?.id) setAgenteRecordId(data.id)
-    })()
-  }, [usuario])
+  const [agenteNombre, setAgenteNombre] = useState("")
 
   const handleScan = useCallback(async (codigo: string) => {
     setEscaneando(true)
@@ -55,35 +46,65 @@ export default function AsistenciaPage() {
 
     try {
       const supabaseAny = supabase as any
-      const { data, error: err } = await supabaseAny
-        .from("puestos")
-        .select("id, nombre, sede_id, sedes!inner(id, nombre)")
-        .eq("qr_code", codigo)
-        .eq("qr_activo", true)
+
+      const { data: agente, error: err } = await supabaseAny
+        .from("agentes")
+        .select("id, codigo, usuario_id, usuarios!inner(nombre, apellido)")
+        .eq("codigo", codigo)
+        .eq("activo", true)
         .maybeSingle()
 
-      if (err || !data) {
-        setError("QR inválido o desactivado")
+      if (err || !agente) {
+        setError("QR inválido: agente no encontrado")
         setQrValido(false)
         return
       }
 
-      const puesto = data as {
-        id: string; nombre: string; sede_id: string
-        sedes: { id: string; nombre: string }
+      if (agente.usuario_id !== usuario?.id) {
+        setError("Este código QR no corresponde a tu usuario")
+        setQrValido(false)
+        return
       }
 
       setQrValido(true)
-      setPuestoId(puesto.id)
-      setPuestoNombre(puesto.nombre)
-      setSedeId(puesto.sedes.id)
-      setSedeNombre(puesto.sedes.nombre)
+      setCodigoEscanado(codigo)
+      setAgenteRecordId(agente.id)
+      setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
 
-      const { data: sedeGps } = await supabaseAny.from("sedes").select("latitud, longitud, radio_gps").eq("id", puesto.sedes.id).maybeSingle()
-      if (sedeGps) {
-        setSedeLat(sedeGps.latitud)
-        setSedeLng(sedeGps.longitud)
-        setSedeRadio(sedeGps.radio_gps ?? 100)
+      const { data: asignacion } = await supabaseAny
+        .from("agentes_sedes")
+        .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
+        .eq("agente_id", agente.id)
+        .eq("tipo", "principal")
+        .eq("activo", true)
+        .maybeSingle()
+
+      if (asignacion) {
+        const sede = asignacion.sedes as { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null }
+        setSedeId(sede.id)
+        setSedeNombre(sede.nombre)
+        setSedeLat(sede.latitud ?? null)
+        setSedeLng(sede.longitud ?? null)
+        setSedeRadio(sede.radio_gps ?? 100)
+      } else {
+        const { data: agenteConSede } = await supabaseAny
+          .from("agentes")
+          .select("sede_principal, sedes!sede_principal(id, nombre, latitud, longitud, radio_gps)")
+          .eq("id", agente.id)
+          .maybeSingle()
+
+        if (!agenteConSede?.sedes) {
+          setError("No tienes una sede asignada. Contacta a tu supervisor.")
+          setQrValido(false)
+          return
+        }
+
+        const sede = agenteConSede.sedes as { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null }
+        setSedeId(sede.id)
+        setSedeNombre(sede.nombre)
+        setSedeLat(sede.latitud ?? null)
+        setSedeLng(sede.longitud ?? null)
+        setSedeRadio(sede.radio_gps ?? 100)
       }
 
       setStep("gps")
@@ -92,7 +113,7 @@ export default function AsistenciaPage() {
     } finally {
       setEscaneando(false)
     }
-  }, [supabase])
+  }, [supabase, usuario])
 
   const handleGPSValidation = useCallback(async () => {
     setValidandoGPS(true)
@@ -146,11 +167,10 @@ export default function AsistenciaPage() {
       tipo: "entrada",
       agente_id: agenteRecordId,
       sede_id: sedeId,
-      puesto_id: puestoId ?? undefined,
       latitud: gpsCoords.lat,
       longitud: gpsCoords.lng,
       gps_precision: gpsCoords.precision,
-      qr_escanado: (qrValido && puestoId ? puestoId : undefined) as string | undefined,
+      qr_escanado: codigoEscanado,
       foto_url: fotoUrl ?? undefined,
     })
 
@@ -159,7 +179,7 @@ export default function AsistenciaPage() {
     } else {
       setError("Error al registrar asistencia")
     }
-  }, [usuario, gpsCoords, marcar, sedeId, puestoId, qrValido, fotoUrl])
+  }, [usuario, gpsCoords, marcar, sedeId, codigoEscanado, fotoUrl, agenteRecordId])
 
   if (authLoading) return <LoadingScreen />
 
@@ -210,10 +230,10 @@ export default function AsistenciaPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <QrCode className="h-5 w-5" />
-              Escanear Código QR
+              Escanear tu Código QR
             </CardTitle>
             <CardDescription>
-              Escanea el código QR del puesto donde te encuentras
+              Escanea el código QR con tu código de agente (ej: AGT-001)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -237,7 +257,7 @@ export default function AsistenciaPage() {
               Validar Ubicación
             </CardTitle>
             <CardDescription>
-              {sedeNombre} - {puestoNombre}
+              {sedeNombre} — {agenteNombre}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -292,12 +312,16 @@ export default function AsistenciaPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2 rounded-lg bg-muted p-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Sede:</span>
-                <span className="font-medium">{sedeNombre}</span>
+                <span className="text-muted-foreground">Agente:</span>
+                <span className="font-medium">{agenteNombre}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Puesto:</span>
-                <span className="font-medium">{puestoNombre}</span>
+                <span className="text-muted-foreground">Código:</span>
+                <span className="font-medium">{codigoEscanado}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Sede:</span>
+                <span className="font-medium">{sedeNombre}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tipo:</span>
@@ -333,7 +357,7 @@ export default function AsistenciaPage() {
             <CheckCircle className="mx-auto h-16 w-16 text-green-500" />
             <CardTitle className="text-xl">Asistencia Registrada</CardTitle>
             <CardDescription>
-              {sedeNombre} - {new Date().toLocaleTimeString("es-PE")}
+              {sedeNombre} — {new Date().toLocaleTimeString("es-PE")}
             </CardDescription>
           </CardHeader>
         </Card>

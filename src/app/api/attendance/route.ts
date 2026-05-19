@@ -18,32 +18,31 @@ export async function POST(request: Request) {
 
     const supabaseAny = supabase as any
 
-    const { data: puesto, error: puestoError } = await supabaseAny
-      .from("puestos")
-      .select("id, requiere_gps, requiere_qr, radio_gps, latitud, longitud")
-      .eq("sede_id", sede_id)
+    const { data: sede, error: sedeError } = await supabaseAny
+      .from("sedes")
+      .select("latitud, longitud, radio_gps")
+      .eq("id", sede_id)
       .eq("activo", true)
       .maybeSingle()
 
-    if (puestoError) throw puestoError
+    if (sedeError) throw sedeError
 
-    if (puesto?.requiere_gps && latitud != null && longitud != null) {
+    if (sede && latitud != null && longitud != null) {
       const R = 6371000
-      const dLat = ((puesto.latitud - latitud) * Math.PI) / 180
-      const dLng = ((puesto.longitud - longitud) * Math.PI) / 180
+      const dLat = ((sede.latitud - latitud) * Math.PI) / 180
+      const dLng = ((sede.longitud - longitud) * Math.PI) / 180
       const a =
         Math.sin(dLat / 2) ** 2 +
         Math.cos((latitud * Math.PI) / 180) *
-          Math.cos((puesto.latitud * Math.PI) / 180) *
+          Math.cos((sede.latitud * Math.PI) / 180) *
           Math.sin(dLng / 2) ** 2
       const distancia = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-      const gpsValido = distancia <= (puesto.radio_gps || 50)
+      const gpsValido = distancia <= (sede.radio_gps || 100)
     }
 
     const { data, error } = await supabaseAny.from("asistencia").insert({
       agente_id,
       sede_id,
-      puesto_id: puesto?.id ?? null,
       tipo,
       latitud: latitud ?? null,
       longitud: longitud ?? null,

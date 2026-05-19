@@ -231,6 +231,32 @@ export interface Database {
           created_at?: string
         }
       }
+      agentes_sedes: {
+        Row: {
+          id: string
+          agente_id: string
+          sede_id: string
+          tipo: string
+          activo: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          agente_id: string
+          sede_id: string
+          tipo: string
+          activo?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          agente_id?: string
+          sede_id?: string
+          tipo?: string
+          activo?: boolean
+          created_at?: string
+        }
+      }
       supervisores: {
         Row: {
           id: string
