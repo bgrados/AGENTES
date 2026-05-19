@@ -71,7 +71,7 @@ export default function UsuariosPage() {
 
   async function cargarUsuarios() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre, ruc), agentes(codigo)").order("apellido")
+    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(codigo)").order("apellido")
     if (data) setUsuarios(data)
     setLoading(false)
   }
@@ -318,11 +318,23 @@ export default function UsuariosPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>DNI</Label>
-                  <Input value={form.dni} onChange={e => setForm(p => ({ ...p, dni: e.target.value }))} placeholder="12345678" />
+                  <Input value={form.dni} onChange={e => {
+                    const dni = e.target.value
+                    setForm(p => {
+                      const viejoDni = p.dni
+                      const rucAuto = viejoDni?.length === 8 ? `10${viejoDni}` : ""
+                      const esAuto = p.ruc === rucAuto || !p.ruc
+                      return {
+                        ...p,
+                        dni,
+                        ruc: dni.length === 8 && esAuto ? `10${dni}` : p.ruc,
+                      }
+                    })
+                  }} placeholder="12345678" />
                 </div>
                 <div>
                   <Label>RUC</Label>
-                  <Input value={form.ruc} onChange={e => setForm(p => ({ ...p, ruc: e.target.value }))} placeholder="10765432101" />
+                  <Input value={form.ruc} onChange={e => setForm(p => ({ ...p, ruc: e.target.value }))} placeholder="10098217580" />
                 </div>
               </div>
               <div>
