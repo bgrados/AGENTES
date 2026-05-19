@@ -32,7 +32,7 @@ interface Usuario {
   activo: boolean
   roles?: { nombre: string }
   empresas?: { nombre: string }
-  agentes?: { codigo: string; sede_principal: string | null; sedes?: { nombre: string } | null } | null
+  agentes?: { id: string; codigo: string; sede_principal: string | null } | null
 }
 
 interface Rol { id: string; nombre: string }
@@ -74,8 +74,25 @@ export default function UsuariosPage() {
 
   async function cargarUsuarios() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(codigo, sede_principal, sedes!sede_principal(nombre))").order("apellido")
-    if (data) setUsuarios(data)
+    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(id, codigo, sede_principal)").order("apellido")
+    if (data) {
+      const agentesIds = data.filter((u: any) => u.agentes?.id).map((u: any) => u.agentes.id)
+      const { data: sedesData } = await supabaseAny
+        .from("agentes_sedes")
+        .select("agente_id, sedes!inner(nombre)")
+        .in("agente_id", agentesIds.length ? agentesIds : ["__none__"])
+        .eq("activo", true)
+      const sedeMap: Record<string, string> = {}
+      if (sedesData) {
+        for (const s of sedesData) {
+          sedeMap[s.agente_id] = s.sedes?.nombre || ""
+        }
+      }
+      setUsuarios(data.map((u: any) => ({
+        ...u,
+        agentes: u.agentes ? { ...u.agentes, sedeNombre: sedeMap[u.agentes.id] || "" } : null,
+      })))
+    }
     setLoading(false)
   }
 
@@ -458,7 +475,7 @@ export default function UsuariosPage() {
                         <span className="truncate max-w-[100px] sm:max-w-none">{u.email}</span>
                         <span className="hidden sm:inline">•</span>
                         <Badge variant="outline" className="text-xs shrink-0">{rolNombre(u.roles?.nombre)}</Badge>
-                        {u.agentes?.sedes?.nombre && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.sedes.nombre}</span></>}
+                        {(u.agentes as any)?.sedeNombre && <><span className="hidden sm:inline">•</span><span className="shrink-0">{(u.agentes as any).sedeNombre}</span></>}
                         {u.dni && <><span className="hidden sm:inline">•</span><span className="shrink-0">DNI: {u.dni}</span></>}
                         {u.dni?.length === 8 && <><span className="hidden sm:inline">•</span><span className="shrink-0">RUC: 10{u.dni}</span></>}
                       </div>
