@@ -2,10 +2,11 @@ import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/providers/theme-provider"
-import { OfflineProvider } from "@/providers/offline-provider"
 import { SupabaseProvider } from "@/providers/supabase-provider"
+import { OfflineProvider } from "@/providers/offline-provider"
 import { OfflineBanner } from "@/components/shared/offline-banner"
 import { Toaster } from "@/components/ui/toaster"
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,7 +21,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Seguridad Control",
   description: "Sistema de control de asistencia y monitoreo operativo",
-  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -49,6 +49,7 @@ export default function RootLayout({
               {children}
               <OfflineBanner />
               <Toaster />
+              <ServiceWorkerRegister />
             </OfflineProvider>
           </SupabaseProvider>
         </ThemeProvider>
