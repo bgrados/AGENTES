@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -56,7 +56,8 @@ export default function UsuariosPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [eliminando, setEliminando] = useState<Usuario | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", ruc: "", foto_url: "", activo: true })
+  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
+  const rucCalculado = form.dni.length === 8 ? `10${form.dni}` : ""
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -90,7 +91,7 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", ruc: "", foto_url: "", activo: true })
+    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
     setFotoFile(null)
     setDialogOpen(true)
   }
@@ -117,7 +118,6 @@ export default function UsuariosPage() {
       email: u.email,
       telefono: u.telefono || "",
       dni: u.dni || "",
-      ruc: u.ruc || "",
       foto_url: u.foto_url || "",
       activo: u.activo,
     })
@@ -148,7 +148,7 @@ export default function UsuariosPage() {
       setSubiendo(false)
     }
 
-    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null, ruc: form.ruc || null }
+    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null, ruc: rucCalculado || null }
 
     if (editando) {
       await supabaseAny.from("usuarios").update(payload).eq("id", editando.id)
@@ -318,23 +318,11 @@ export default function UsuariosPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>DNI</Label>
-                  <Input value={form.dni} onChange={e => {
-                    const dni = e.target.value
-                    setForm(p => {
-                      const viejoDni = p.dni
-                      const rucAuto = viejoDni?.length === 8 ? `10${viejoDni}` : ""
-                      const esAuto = p.ruc === rucAuto || !p.ruc
-                      return {
-                        ...p,
-                        dni,
-                        ruc: dni.length === 8 && esAuto ? `10${dni}` : p.ruc,
-                      }
-                    })
-                  }} placeholder="12345678" />
+                  <Input value={form.dni} onChange={e => setForm(p => ({ ...p, dni: e.target.value }))} placeholder="12345678" maxLength={8} />
                 </div>
                 <div>
                   <Label>RUC</Label>
-                  <Input value={form.ruc} onChange={e => setForm(p => ({ ...p, ruc: e.target.value }))} placeholder="10098217580" />
+                  <Input value={rucCalculado || "---"} readOnly className="bg-muted text-muted-foreground" />
                 </div>
               </div>
               <div>
@@ -440,7 +428,7 @@ export default function UsuariosPage() {
                         {u.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.codigo}</span></>}
                         {u.agentes?.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.codigo}</span></>}
                         {u.dni && <><span className="hidden sm:inline">•</span><span className="shrink-0">DNI: {u.dni}</span></>}
-                        {u.ruc && <><span className="hidden sm:inline">•</span><span className="shrink-0">RUC: {u.ruc}</span></>}
+                        {u.dni?.length === 8 && <><span className="hidden sm:inline">•</span><span className="shrink-0">RUC: 10{u.dni}</span></>}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
