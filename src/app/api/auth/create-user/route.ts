@@ -28,33 +28,47 @@ export async function POST(request: Request) {
 
     const admin = createAdminClient()
 
-    const { data: authUser, error: createErr } = await admin.auth.admin.createUser({
+    let uid: string | null = null
+    let actualizado = false
+
+    // Intentar crear usuario nuevo en Auth
+    const { data: nuevo, error: createErr } = await admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: { from_usuario: usuario_id },
     })
 
-    if (createErr) {
-      if (createErr.message?.includes("already registered")) {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?filter=email%3D${encodeURIComponent(email)}`,
-          { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}` } },
-        )
-        const users = await res.json()
-        const existingUid = Array.isArray(users) ? users[0]?.id : users?.users?.[0]?.id
-        if (existingUid) {
-          await admin.auth.admin.updateUserById(existingUid, { password })
-          await supabaseAny.from("usuarios").update({ auth_uid: existingUid }).eq("id", usuario_id)
-          return NextResponse.json({ success: true, uid: existingUid, updated: true })
-        }
-      }
-      return NextResponse.json({ error: createErr.message }, { status: 400 })
+    if (nuevo?.user) {
+      uid = nuevo.user.id
     }
 
-    await supabaseAny.from("usuarios").update({ auth_uid: authUser.user.id }).eq("id", usuario_id)
+    if (createErr) {
+      // Si ya existe, buscar por email vía GoTrue Admin API
+      const goTrueUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?filter=email%3D${encodeURIComponent(email)}`
+      const res = await fetch(goTrueUrl, {
+        headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}` },
+      })
+      const body = await res.json()
+      const usersList: { id: string; email: string }[] = body?.users ?? (Array.isArray(body) ? body : [])
+      const existente = usersList.find(u => u.email === email)
+      if (existente) {
+        const { error: updateErr } = await admin.auth.admin.updateUserById(existente.id, { password })
+        if (updateErr) {
+          return NextResponse.json({ error: "Error al actualizar password: " + updateErr.message }, { status: 400 })
+        }
+        uid = existente.id
+        actualizado = true
+      } else {
+        return NextResponse.json({ error: "El email ya existe en Auth pero no se pudo localizar. Bórralo manualmente en Supabase > Authentication > Users." }, { status: 400 })
+      }
+    }
 
-    return NextResponse.json({ success: true, uid: authUser.user.id })
+    if (uid) {
+      await supabaseAny.from("usuarios").update({ auth_uid: uid }).eq("id", usuario_id)
+    }
+
+    return NextResponse.json({ success: true, uid, actualizado })
   } catch (error) {
     console.error("Create user error:", error)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
