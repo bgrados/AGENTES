@@ -37,7 +37,6 @@ export async function POST(request: Request) {
           Math.cos((sede.latitud * Math.PI) / 180) *
           Math.sin(dLng / 2) ** 2
       const distancia = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-      const gpsValido = distancia <= (sede.radio_gps || 100)
     }
 
     const { data, error } = await supabaseAny.from("asistencia").insert({

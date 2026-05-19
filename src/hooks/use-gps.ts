@@ -38,16 +38,22 @@ export function useGPS() {
   }, [setUbicacionActual, setTracking, setGpsActivo])
 
   const obtenerPosicion = useCallback((): Promise<GeolocationPosition> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        reject(new Error("GPS no disponible"))
+        resolve({ coords: { latitude: 0, longitude: 0, accuracy: 9999 } } as GeolocationPosition)
         return
       }
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: GPS_CONFIG.TIMEOUT,
-        maximumAge: 0,
-      })
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(pos),
+        () => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve(pos),
+            () => resolve({ coords: { latitude: 0, longitude: 0, accuracy: 9999 } } as GeolocationPosition),
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 },
+          )
+        },
+        { enableHighAccuracy: true, timeout: GPS_CONFIG.TIMEOUT, maximumAge: 0 },
+      )
     })
   }, [])
 

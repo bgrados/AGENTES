@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { Html5Qrcode } from "html5-qrcode"
 import { Button } from "@/components/ui/button"
-import { Loader2, Camera, CameraOff, Scan } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Loader2, Camera, CameraOff, Scan, Keyboard } from "lucide-react"
 
 interface QRScannerProps {
   onScan: (codigo: string) => void
@@ -16,22 +17,15 @@ const QR_SCANNER_ID = "qr-scanner-element"
 export function QRScanner({ onScan, onError, escaneando }: QRScannerProps) {
   const [camaraActiva, setCamaraActiva] = useState(false)
   const [iniciando, setIniciando] = useState(false)
-  const [permiso, setPermiso] = useState<boolean | null>(null)
+  const [permisoDenegado, setPermisoDenegado] = useState(false)
+  const [modoTexto, setModoTexto] = useState(false)
+  const [codigoManual, setCodigoManual] = useState("")
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const ultimoScanRef = useRef("")
+  const contenedorRef = useRef<HTMLDivElement>(null)
 
   const iniciarCamara = async () => {
     setIniciando(true)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      stream.getTracks().forEach((t) => t.stop())
-      setPermiso(true)
-    } catch {
-      setPermiso(false)
-      setIniciando(false)
-      return
-    }
-
     try {
       const scanner = new Html5Qrcode(QR_SCANNER_ID)
       scannerRef.current = scanner
@@ -39,9 +33,8 @@ export function QRScanner({ onScan, onError, escaneando }: QRScannerProps) {
       await scanner.start(
         { facingMode: "environment" },
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1,
+          fps: 15,
+          qrbox: { width: 220, height: 220 },
         },
         (decodedText) => {
           if (ultimoScanRef.current !== decodedText) {
@@ -55,7 +48,11 @@ export function QRScanner({ onScan, onError, escaneando }: QRScannerProps) {
       setCamaraActiva(true)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error al iniciar cámara"
-      onError?.(msg)
+      if (msg.includes("NotAllowed") || msg.includes("Permission")) {
+        setPermisoDenegado(true)
+      } else {
+        onError?.(msg)
+      }
     } finally {
       setIniciando(false)
     }
@@ -83,13 +80,34 @@ export function QRScanner({ onScan, onError, escaneando }: QRScannerProps) {
     }
   }, [escaneando])
 
-  if (permiso === false) {
+  function enviarManual() {
+    const codigo = codigoManual.trim().toUpperCase()
+    if (codigo) onScan(codigo)
+  }
+
+  if (permisoDenegado) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed bg-muted/50 p-8 text-center">
-        <CameraOff className="mx-auto h-12 w-12 text-muted-foreground/50" />
-        <p className="mt-2 text-sm text-muted-foreground">
-          Permiso de cámara denegado. Habilítalo en la configuración del dispositivo.
-        </p>
+      <div className="space-y-4">
+        <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed bg-muted/50 p-8 text-center">
+          <CameraOff className="mx-auto h-12 w-12 text-muted-foreground/50" />
+          <p className="mt-2 text-sm text-muted-foreground">
+            Permiso de cámara denegado. Habilítalo en la configuración del dispositivo.
+          </p>
+        </div>
+        <Button variant="outline" className="w-full" onClick={() => setModoTexto(true)}>
+          <Keyboard className="mr-2 h-4 w-4" /> Ingresar código manualmente
+        </Button>
+        {modoTexto && (
+          <div className="flex gap-2">
+            <Input
+              placeholder="AGT-001"
+              value={codigoManual}
+              onChange={(e) => setCodigoManual(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") enviarManual() }}
+            />
+            <Button onClick={enviarManual}>OK</Button>
+          </div>
+        )}
       </div>
     )
   }
@@ -97,20 +115,38 @@ export function QRScanner({ onScan, onError, escaneando }: QRScannerProps) {
   return (
     <div className="space-y-4">
       <div
+        ref={contenedorRef}
         id={QR_SCANNER_ID}
-        className="mx-auto overflow-hidden rounded-lg"
-        style={{ width: "100%", maxWidth: 360, minHeight: 280 }}
+        className="mx-auto overflow-hidden rounded-lg bg-black"
+        style={{ width: "100%", maxWidth: 360, minHeight: camaraActiva ? 0 : 280 }}
       />
 
+      {modoTexto && (
+        <div className="flex gap-2">
+          <Input
+            placeholder="AGT-001"
+            value={codigoManual}
+            onChange={(e) => setCodigoManual(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") enviarManual() }}
+          />
+          <Button onClick={enviarManual}>OK</Button>
+        </div>
+      )}
+
       {!camaraActiva ? (
-        <Button className="w-full" onClick={iniciarCamara} disabled={iniciando}>
-          {iniciando ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Camera className="mr-2 h-4 w-4" />
-          )}
-          {iniciando ? "Iniciando cámara..." : "Escanear QR"}
-        </Button>
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={iniciarCamara} disabled={iniciando}>
+            {iniciando ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Camera className="mr-2 h-4 w-4" />
+            )}
+            {iniciando ? "Iniciando cámara..." : "Escanear QR"}
+          </Button>
+          <Button variant="outline" className="shrink-0" onClick={() => setModoTexto(!modoTexto)} title="Ingresar código manual">
+            <Keyboard className="h-4 w-4" />
+          </Button>
+        </div>
       ) : (
         <Button variant="destructive" className="w-full" onClick={detenerCamara}>
           <Scan className="mr-2 h-4 w-4" />
