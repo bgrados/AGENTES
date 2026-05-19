@@ -27,9 +27,10 @@ interface Usuario {
   telefono: string | null
   foto_url: string | null
   dni: string | null
+  ruc: string | null
   activo: boolean
   roles?: { nombre: string }
-  empresas?: { nombre: string; ruc?: string | null }
+  empresas?: { nombre: string }
   agentes?: { codigo: string } | null
 }
 
@@ -54,7 +55,7 @@ export default function UsuariosPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [eliminando, setEliminando] = useState<Usuario | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
+  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", ruc: "", foto_url: "", activo: true })
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -88,7 +89,7 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
+    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", ruc: "", foto_url: "", activo: true })
     setFotoFile(null)
     setDialogOpen(true)
   }
@@ -115,6 +116,7 @@ export default function UsuariosPage() {
       email: u.email,
       telefono: u.telefono || "",
       dni: u.dni || "",
+      ruc: u.ruc || "",
       foto_url: u.foto_url || "",
       activo: u.activo,
     })
@@ -145,7 +147,7 @@ export default function UsuariosPage() {
       setSubiendo(false)
     }
 
-    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null }
+    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null, ruc: form.ruc || null }
 
     if (editando) {
       await supabaseAny.from("usuarios").update(payload).eq("id", editando.id)
@@ -316,9 +318,13 @@ export default function UsuariosPage() {
                   <Input value={form.dni} onChange={e => setForm(p => ({ ...p, dni: e.target.value }))} placeholder="12345678" />
                 </div>
                 <div>
-                  <Label>Código</Label>
-                  <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
+                  <Label>RUC</Label>
+                  <Input value={form.ruc} onChange={e => setForm(p => ({ ...p, ruc: e.target.value }))} placeholder="10765432101" />
                 </div>
+              </div>
+              <div>
+                <Label>Código</Label>
+                <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
               </div>
             </div>
             <DialogFooter>
@@ -419,17 +425,25 @@ export default function UsuariosPage() {
                         {u.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.codigo}</span></>}
                         {u.agentes?.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.codigo}</span></>}
                         {u.dni && <><span className="hidden sm:inline">•</span><span className="shrink-0">DNI: {u.dni}</span></>}
-                        {u.empresas?.ruc && <><span className="hidden sm:inline">•</span><span className="shrink-0 hidden sm:inline">RUC: {u.empresas.ruc}</span></>}
+                        {u.ruc && <><span className="hidden sm:inline">•</span><span className="shrink-0">RUC: {u.ruc}</span></>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       <Badge variant={u.activo ? "success" : "secondary"} className="hidden sm:inline-flex">{u.activo ? "Activo" : "Inactivo"}</Badge>
-                      <Button variant="outline" size="sm" className="h-10 w-10 p-0" onClick={(e) => { e.stopPropagation(); abrirQR({ ...u, codigo: codigoQR }); }} title="Ver QR">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirQR({ ...u, codigo: codigoQR }); }}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary hover:bg-primary/25 active:bg-primary/35 transition-colors"
+                        title="Ver QR"
+                      >
                         <QrCode className="h-5 w-5" />
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-10 w-10 p-0 border-red-200 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={(e) => { e.stopPropagation(); abrirEliminar(u); }} title="Eliminar">
-                        <Trash2 className="h-5 w-5 text-red-500" />
-                      </Button>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); abrirEliminar(u); }}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/15 text-red-500 hover:bg-red-500/25 active:bg-red-500/35 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
                     </div>
                   </div>
                 )
