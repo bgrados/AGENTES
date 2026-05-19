@@ -87,11 +87,20 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    const nextNum = usuarios.filter(u => u.roles?.nombre === "agente").length + 1
-    const codigoSugerido = `AGT-${String(nextNum).padStart(3, "0")}`
-    setForm({ empresa_id: "", rol_id: "", codigo: codigoSugerido, nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
+    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
     setFotoFile(null)
     setDialogOpen(true)
+  }
+
+  function sugerirCodigo(rolId: string) {
+    const rol = roles.find(r => r.id === rolId)
+    const prefix = rol?.nombre === "jefe_grupo" ? "JEF" : "AGT"
+    const count = usuarios.filter(u => {
+      const r = u.roles?.nombre
+      if (rol?.nombre === "jefe_grupo") return r === "jefe_grupo"
+      return r === "agente"
+    }).length + 1
+    setForm(p => ({ ...p, codigo: `${prefix}-${String(count).padStart(3, "0")}` }))
   }
 
   function abrirEditar(u: Usuario) {
@@ -142,8 +151,9 @@ export default function UsuariosPage() {
       const { data: nuevoUsuario } = await supabaseAny.from("usuarios").insert(payload).select().single()
       if (nuevoUsuario) {
         const rol = roles.find(r => r.id === form.rol_id)
-        if (rol?.nombre === "agente") {
-          const codigo = form.codigo || nuevoUsuario.codigo || `AGT-${String(usuarios.length + 1).padStart(3, "0")}`
+        if (rol?.nombre === "agente" || rol?.nombre === "jefe_grupo") {
+          const prefix = rol?.nombre === "jefe_grupo" ? "JEF" : "AGT"
+          const codigo = form.codigo || nuevoUsuario.codigo || `${prefix}-${String(usuarios.length + 1).padStart(3, "0")}`
           await supabaseAny.from("agentes").insert({
             usuario_id: nuevoUsuario.id,
             codigo,
@@ -289,6 +299,7 @@ export default function UsuariosPage() {
                   <Label>Rol</Label>
                   <Select value={form.rol_id} onValueChange={v => {
                     setForm(p => ({ ...p, rol_id: v }))
+                    if (!editando) sugerirCodigo(v)
                   }}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                     <SelectContent>
@@ -319,7 +330,7 @@ export default function UsuariosPage() {
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
               ¿Estás seguro de eliminar a <strong>{eliminando?.nombre} {eliminando?.apellido}</strong>?
-              {eliminando?.roles?.nombre === "agente" && (
+              {(eliminando?.roles?.nombre === "agente" || eliminando?.roles?.nombre === "jefe_grupo") && (
                 <> También se eliminará su registro de agente.</>
               )}
             </p>
