@@ -32,34 +32,46 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   {
-    label: "Dashboard",
-    href: "/agente",
-    icon: LayoutDashboard,
-    roles: ["agente", "jefe_grupo"],
-  },
-  {
     label: "Marcar Asistencia",
     href: "/agente/asistencia",
     icon: ClipboardCheck,
-    roles: ["agente", "jefe_grupo"],
+    roles: ["agente"],
   },
   {
     label: "Reportes",
     href: "/agente/reportes",
     icon: FileText,
-    roles: ["agente", "jefe_grupo"],
+    roles: ["agente"],
+  },
+  {
+    label: "Dashboard",
+    href: "/agente",
+    icon: LayoutDashboard,
+    roles: ["jefe_grupo"],
+  },
+  {
+    label: "Marcar Asistencia",
+    href: "/agente/asistencia",
+    icon: ClipboardCheck,
+    roles: ["jefe_grupo"],
+  },
+  {
+    label: "Reportes",
+    href: "/agente/reportes",
+    icon: FileText,
+    roles: ["jefe_grupo"],
   },
   {
     label: "Historial",
     href: "/agente/historial",
     icon: Clock,
-    roles: ["agente", "jefe_grupo"],
+    roles: ["jefe_grupo"],
   },
   {
     label: "Mi QR",
     href: "/agente/mi-qr",
     icon: QrCode,
-    roles: ["agente", "jefe_grupo"],
+    roles: ["jefe_grupo"],
   },
   {
     label: "Dashboard",
@@ -150,7 +162,7 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const { usuario } = useAuthStore()
-  const { sidebarOpen } = useUIStore()
+  const { sidebarOpen, setSidebarOpen } = useUIStore()
   const rol = usuario?.rol || "agente"
 
   const itemsFiltrados = navItems.filter((item) => item.roles.includes(rol))
@@ -170,6 +182,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive

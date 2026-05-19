@@ -17,13 +17,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
 
+  const emailCompleto = email.includes("@") ? email : `${email}@seguridad.com`
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setLoading(true)
 
     try {
-      await login(email, password)
+      await login(emailCompleto, password)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión")
     } finally {
@@ -46,13 +48,14 @@ export default function LoginPage() {
             <Label htmlFor="email">Correo electrónico</Label>
             <Input
               id="email"
-              type="email"
-              placeholder="correo@ejemplo.com"
+              type="text"
+              placeholder="usuario (ej: camilo.angulo)"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value.replace(/@.*$/, ""))}
               required
               autoComplete="email"
             />
+            <p className="text-xs text-muted-foreground">Se agregará @seguridad.com automáticamente</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Contraseña</Label>

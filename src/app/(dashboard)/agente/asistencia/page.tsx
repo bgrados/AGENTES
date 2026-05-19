@@ -76,42 +76,39 @@ export default function AsistenciaPage() {
       setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
 
       let sedeData: { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null } | null = null
+      let debugInfo = ""
 
-      const { data: asignacion } = await supabaseAny
+      // Intento 1: agentes_sedes activo (cualquier tipo)
+      const { data: s1 } = await supabaseAny
         .from("agentes_sedes")
         .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
         .eq("agente_id", agente.id)
-        .eq("tipo", "principal")
         .eq("activo", true)
         .maybeSingle()
+      if (s1?.sedes) { sedeData = s1.sedes as any; debugInfo = "desde agentes_sedes activo" }
 
-      if (asignacion?.sedes) {
-        sedeData = asignacion.sedes as any
-      } else {
-        const { data: agenteConSede } = await supabaseAny
+      // Intento 2: agentes_sedes sin filtro activo
+      if (!sedeData) {
+        const { data: s2 } = await supabaseAny
+          .from("agentes_sedes")
+          .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
+          .eq("agente_id", agente.id)
+          .maybeSingle()
+        if (s2?.sedes) { sedeData = s2.sedes as any; debugInfo = "desde agentes_sedes cualquier" }
+      }
+
+      // Intento 3: sede_principal en agentes
+      if (!sedeData) {
+        const { data: s3 } = await supabaseAny
           .from("agentes")
           .select("sede_principal, sedes!sede_principal(id, nombre, latitud, longitud, radio_gps)")
           .eq("id", agente.id)
           .maybeSingle()
-
-        if (agenteConSede?.sedes) {
-          sedeData = agenteConSede.sedes as any
-        } else {
-          const { data: anySede } = await supabaseAny
-            .from("agentes_sedes")
-            .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
-            .eq("agente_id", agente.id)
-            .eq("activo", true)
-            .maybeSingle()
-
-          if (anySede?.sedes) {
-            sedeData = anySede.sedes as any
-          }
-        }
+        if (s3?.sedes) { sedeData = s3.sedes as any; debugInfo = "desde agentes.sede_principal" }
       }
 
       if (!sedeData) {
-        setError("No tienes una sede asignada. Contacta a tu supervisor.")
+        setError("No tienes una sede asignada. Contacta a tu supervisor. (debug: agente_id=" + agente.id + ")")
         setQrValido(false)
         return
       }
