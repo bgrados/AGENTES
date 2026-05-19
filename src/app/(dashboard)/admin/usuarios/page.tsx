@@ -26,9 +26,10 @@ interface Usuario {
   email: string
   telefono: string | null
   foto_url: string | null
+  dni: string | null
   activo: boolean
   roles?: { nombre: string }
-  empresas?: { nombre: string }
+  empresas?: { nombre: string; ruc?: string | null }
   agentes?: { codigo: string } | null
 }
 
@@ -53,7 +54,7 @@ export default function UsuariosPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [eliminando, setEliminando] = useState<Usuario | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
+  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -68,7 +69,7 @@ export default function UsuariosPage() {
 
   async function cargarUsuarios() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(codigo)").order("nombre")
+    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre, ruc), agentes(codigo)").order("apellido")
     if (data) setUsuarios(data)
     setLoading(false)
   }
@@ -87,7 +88,7 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
+    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
     setFotoFile(null)
     setDialogOpen(true)
   }
@@ -113,6 +114,7 @@ export default function UsuariosPage() {
       apellido: u.apellido,
       email: u.email,
       telefono: u.telefono || "",
+      dni: u.dni || "",
       foto_url: u.foto_url || "",
       activo: u.activo,
     })
@@ -143,7 +145,7 @@ export default function UsuariosPage() {
       setSubiendo(false)
     }
 
-    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null }
+    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null }
 
     if (editando) {
       await supabaseAny.from("usuarios").update(payload).eq("id", editando.id)
@@ -308,9 +310,15 @@ export default function UsuariosPage() {
                   </Select>
                 </div>
               </div>
-              <div>
-                <Label>Código</Label>
-                <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>DNI</Label>
+                  <Input value={form.dni} onChange={e => setForm(p => ({ ...p, dni: e.target.value }))} placeholder="12345678" />
+                </div>
+                <div>
+                  <Label>Código</Label>
+                  <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
+                </div>
               </div>
             </div>
             <DialogFooter>
@@ -391,40 +399,41 @@ export default function UsuariosPage() {
         <Card>
           <ScrollArea className="h-[600px]">
             <div className="divide-y">
-              {usuarios.map(u => (
-                <div
-                  key={u.id}
-                  className={`flex items-center gap-3 p-4 cursor-pointer transition-colors hover:bg-accent/50 active:bg-accent ${!u.activo ? "opacity-50" : ""}`}
-                  onClick={() => abrirEditar(u)}
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    {roleIcons[u.roles?.nombre || ""] || <User className="h-4 w-4" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{u.nombre} {u.apellido}</p>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                      <span className="truncate max-w-[120px] sm:max-w-none">{u.email}</span>
-                      <span className="hidden sm:inline">•</span>
-                      <Badge variant="outline" className="text-xs shrink-0">{rolNombre(u.roles?.nombre)}</Badge>
-                      {u.agentes?.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.codigo}</span></>}
+              {usuarios.map(u => {
+                const codigoQR = u.agentes?.codigo || u.codigo || u.email
+                return (
+                  <div
+                    key={u.id}
+                    className={`flex items-center gap-2 p-4 cursor-pointer transition-colors hover:bg-accent/50 active:bg-accent ${!u.activo ? "opacity-50" : ""}`}
+                    onClick={() => abrirEditar(u)}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                      {roleIcons[u.roles?.nombre || ""] || <User className="h-4 w-4" />}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Badge variant={u.activo ? "success" : "secondary"} className="hidden sm:inline-flex">{u.activo ? "Activo" : "Inactivo"}</Badge>
-                    {u.agentes?.codigo && (
-                      <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={(e) => { e.stopPropagation(); abrirQR(u); }} title="Ver QR">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{u.apellido}, {u.nombre}</p>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                        <span className="truncate max-w-[100px] sm:max-w-none">{u.email}</span>
+                        <span className="hidden sm:inline">•</span>
+                        <Badge variant="outline" className="text-xs shrink-0">{rolNombre(u.roles?.nombre)}</Badge>
+                        {u.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.codigo}</span></>}
+                        {u.agentes?.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.codigo}</span></>}
+                        {u.dni && <><span className="hidden sm:inline">•</span><span className="shrink-0">DNI: {u.dni}</span></>}
+                        {u.empresas?.ruc && <><span className="hidden sm:inline">•</span><span className="shrink-0 hidden sm:inline">RUC: {u.empresas.ruc}</span></>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Badge variant={u.activo ? "success" : "secondary"} className="hidden sm:inline-flex">{u.activo ? "Activo" : "Inactivo"}</Badge>
+                      <Button variant="outline" size="sm" className="h-10 w-10 p-0" onClick={(e) => { e.stopPropagation(); abrirQR({ ...u, codigo: codigoQR }); }} title="Ver QR">
                         <QrCode className="h-5 w-5" />
                       </Button>
-                    )}
-                    <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={(e) => { e.stopPropagation(); abrirEditar(u); }} title="Editar">
-                      <Pencil className="h-5 w-5" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-red-200 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={(e) => { e.stopPropagation(); abrirEliminar(u); }} title="Eliminar">
-                      <Trash2 className="h-5 w-5 text-red-500" />
-                    </Button>
+                      <Button variant="outline" size="sm" className="h-10 w-10 p-0 border-red-200 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={(e) => { e.stopPropagation(); abrirEliminar(u); }} title="Eliminar">
+                        <Trash2 className="h-5 w-5 text-red-500" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </ScrollArea>
         </Card>
