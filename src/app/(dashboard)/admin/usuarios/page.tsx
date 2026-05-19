@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { EmptyState } from "@/components/shared/empty-state"
-import { Users, Plus, Pencil, Trash2, Camera, Shield, ShieldCheck, UserCog, User, AlertTriangle } from "lucide-react"
+import { Users, Plus, Pencil, Trash2, Camera, Shield, ShieldCheck, UserCog, User, AlertTriangle, QrCode, Download, Loader2 } from "lucide-react"
+import QRCode from "qrcode"
 
 interface Usuario {
   id: string
@@ -28,6 +29,7 @@ interface Usuario {
   activo: boolean
   roles?: { nombre: string }
   empresas?: { nombre: string }
+  agentes?: { codigo: string } | null
 }
 
 interface Rol { id: string; nombre: string }
@@ -55,6 +57,10 @@ export default function UsuariosPage() {
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [qrDialogOpen, setQrDialogOpen] = useState(false)
+  const [qrInfo, setQrInfo] = useState<{ codigo: string; nombre: string; email: string } | null>(null)
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null)
+  const [generando, setGenerando] = useState(false)
 
   useEffect(() => {
     Promise.all([cargarUsuarios(), cargarRoles(), cargarEmpresas()])
@@ -62,7 +68,7 @@ export default function UsuariosPage() {
 
   async function cargarUsuarios() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre)").order("nombre")
+    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(codigo)").order("nombre")
     if (data) setUsuarios(data)
     setLoading(false)
   }
@@ -81,7 +87,9 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
+    const nextNum = usuarios.filter(u => u.roles?.nombre === "agente").length + 1
+    const codigoSugerido = `AGT-${String(nextNum).padStart(3, "0")}`
+    setForm({ empresa_id: "", rol_id: "", codigo: codigoSugerido, nombre: "", apellido: "", email: "", telefono: "", foto_url: "", activo: true })
     setFotoFile(null)
     setDialogOpen(true)
   }
@@ -91,7 +99,7 @@ export default function UsuariosPage() {
     setForm({
       empresa_id: u.empresa_id,
       rol_id: u.rol_id,
-      codigo: u.codigo || "",
+      codigo: u.codigo || u.agentes?.codigo || "",
       nombre: u.nombre,
       apellido: u.apellido,
       email: u.email,
@@ -131,12 +139,24 @@ export default function UsuariosPage() {
     if (editando) {
       await supabaseAny.from("usuarios").update(payload).eq("id", editando.id)
     } else {
-      await supabaseAny.from("usuarios").insert(payload)
+      const { data: nuevoUsuario } = await supabaseAny.from("usuarios").insert(payload).select().single()
+      if (nuevoUsuario) {
+        const rol = roles.find(r => r.id === form.rol_id)
+        if (rol?.nombre === "agente") {
+          const codigo = form.codigo || nuevoUsuario.codigo || `AGT-${String(usuarios.length + 1).padStart(3, "0")}`
+          await supabaseAny.from("agentes").insert({
+            usuario_id: nuevoUsuario.id,
+            codigo,
+            turno_asignado: "dia",
+            activo: true,
+          })
+        }
+      }
     }
 
     setFotoFile(null)
     setDialogOpen(false)
-    cargarUsuarios()
+    await cargarUsuarios()
   }
 
   async function confirmarEliminar() {
@@ -156,15 +176,40 @@ export default function UsuariosPage() {
     setDeleteDialogOpen(true)
   }
 
+  const abrirQR = useCallback(async (u: Usuario) => {
+    const codigo = u.agentes?.codigo || u.codigo
+    if (!codigo) return
+    setQrInfo({ codigo, nombre: `${u.nombre} ${u.apellido}`, email: u.email })
+    setQrDialogOpen(true)
+    setGenerando(true)
+    await new Promise(r => setTimeout(r, 50))
+    if (qrCanvasRef.current) {
+      try {
+        await QRCode.toCanvas(qrCanvasRef.current, codigo, {
+          width: 280,
+          margin: 2,
+          color: { dark: "#000000", light: "#ffffff" },
+        })
+      } catch {}
+    }
+    setGenerando(false)
+  }, [])
+
+  function descargarQR() {
+    const canvas = qrCanvasRef.current
+    if (!canvas || !qrInfo) return
+    const link = document.createElement("a")
+    link.download = `QR-${qrInfo.codigo}.png`
+    link.href = canvas.toDataURL("image/png")
+    link.click()
+  }
+
   const rolNombre = (r: string | undefined) => r || "sin rol"
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
 
   return (
     <div className="space-y-6">
-      <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold text-lg">
-        VERSION 2 - FOTO Y ELIMINAR ACTIVADOS
-      </div>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Usuarios</h1>
@@ -242,7 +287,9 @@ export default function UsuariosPage() {
                 </div>
                 <div>
                   <Label>Rol</Label>
-                  <Select value={form.rol_id} onValueChange={v => setForm(p => ({ ...p, rol_id: v }))}>
+                  <Select value={form.rol_id} onValueChange={v => {
+                    setForm(p => ({ ...p, rol_id: v }))
+                  }}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                     <SelectContent>
                       {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>)}
@@ -252,7 +299,7 @@ export default function UsuariosPage() {
               </div>
               <div>
                 <Label>Código</Label>
-                <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="USR-001" />
+                <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
               </div>
             </div>
             <DialogFooter>
@@ -284,6 +331,34 @@ export default function UsuariosPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <QrCode className="h-5 w-5" />
+                Código QR — {qrInfo?.codigo}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center py-4 space-y-3">
+              {generando ? (
+                <Loader2 className="h-20 w-20 animate-spin text-muted-foreground" />
+              ) : (
+                <div className="rounded-xl border bg-white p-3 shadow-sm">
+                  <canvas ref={qrCanvasRef} className="h-[280px] w-[280px]" />
+                </div>
+              )}
+              <div className="text-center">
+                <p className="font-bold">{qrInfo?.nombre}</p>
+                <p className="text-sm text-muted-foreground">{qrInfo?.codigo}</p>
+                <p className="text-xs text-muted-foreground">{qrInfo?.email}</p>
+              </div>
+              <Button className="w-full" onClick={descargarQR}>
+                <Download className="mr-2 h-4 w-4" /> Descargar QR
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {usuarios.length === 0 ? (
@@ -308,11 +383,16 @@ export default function UsuariosPage() {
                         <span>{u.email}</span>
                         <span>•</span>
                         <Badge variant="outline" className="text-xs">{rolNombre(u.roles?.nombre)}</Badge>
-                        {u.codigo && <><span>•</span><span>{u.codigo}</span></>}
+                        {u.agentes?.codigo && <><span>•</span><span>{u.agentes.codigo}</span></>}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {u.agentes?.codigo && (
+                      <Button variant="ghost" size="sm" onClick={() => abrirQR(u)} title="Ver QR">
+                        <QrCode className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <Badge variant={u.activo ? "success" : "secondary"}>{u.activo ? "Activo" : "Inactivo"}</Badge>
                     <Button variant="ghost" size="sm" onClick={() => abrirEditar(u)}>
                       <Pencil className="h-3 w-3" />
