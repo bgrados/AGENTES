@@ -32,7 +32,7 @@ interface Usuario {
   activo: boolean
   roles?: { nombre: string }
   empresas?: { nombre: string }
-  agentes?: { codigo: string } | null
+  agentes?: { codigo: string; sede_principal: string | null; sedes?: { nombre: string } | null } | null
 }
 
 interface Rol { id: string; nombre: string }
@@ -74,7 +74,7 @@ export default function UsuariosPage() {
 
   async function cargarUsuarios() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(codigo)").order("apellido")
+    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(codigo, sede_principal, sedes!sede_principal(nombre))").order("apellido")
     if (data) setUsuarios(data)
     setLoading(false)
   }
@@ -250,7 +250,11 @@ export default function UsuariosPage() {
     link.click()
   }
 
-  const rolNombre = (r: string | undefined) => r || "sin rol"
+  const rolNombre = (r: string | undefined) => {
+    if (!r) return "sin rol"
+    const mapa: Record<string, string> = { jefe_grupo: "Jefe de Grupo", admin: "Admin", supervisor: "Supervisor", agente: "Agente" }
+    return mapa[r] || r
+  }
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>
 
@@ -454,8 +458,7 @@ export default function UsuariosPage() {
                         <span className="truncate max-w-[100px] sm:max-w-none">{u.email}</span>
                         <span className="hidden sm:inline">•</span>
                         <Badge variant="outline" className="text-xs shrink-0">{rolNombre(u.roles?.nombre)}</Badge>
-                        {u.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.codigo}</span></>}
-                        {u.agentes?.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.codigo}</span></>}
+                        {u.agentes?.sedes?.nombre && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.sedes.nombre}</span></>}
                         {u.dni && <><span className="hidden sm:inline">•</span><span className="shrink-0">DNI: {u.dni}</span></>}
                         {u.dni?.length === 8 && <><span className="hidden sm:inline">•</span><span className="shrink-0">RUC: 10{u.dni}</span></>}
                       </div>

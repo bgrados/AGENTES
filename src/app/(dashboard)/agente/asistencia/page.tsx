@@ -75,6 +75,8 @@ export default function AsistenciaPage() {
       setAgenteRecordId(agente.id)
       setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
 
+      let sedeData: { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null } | null = null
+
       const { data: asignacion } = await supabaseAny
         .from("agentes_sedes")
         .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
@@ -83,13 +85,8 @@ export default function AsistenciaPage() {
         .eq("activo", true)
         .maybeSingle()
 
-      if (asignacion) {
-        const sede = asignacion.sedes as { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null }
-        setSedeId(sede.id)
-        setSedeNombre(sede.nombre)
-        setSedeLat(sede.latitud ?? null)
-        setSedeLng(sede.longitud ?? null)
-        setSedeRadio(sede.radio_gps ?? 100)
+      if (asignacion?.sedes) {
+        sedeData = asignacion.sedes as any
       } else {
         const { data: agenteConSede } = await supabaseAny
           .from("agentes")
@@ -97,19 +94,33 @@ export default function AsistenciaPage() {
           .eq("id", agente.id)
           .maybeSingle()
 
-        if (!agenteConSede?.sedes) {
-          setError("No tienes una sede asignada. Contacta a tu supervisor.")
-          setQrValido(false)
-          return
-        }
+        if (agenteConSede?.sedes) {
+          sedeData = agenteConSede.sedes as any
+        } else {
+          const { data: anySede } = await supabaseAny
+            .from("agentes_sedes")
+            .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
+            .eq("agente_id", agente.id)
+            .eq("activo", true)
+            .maybeSingle()
 
-        const sede = agenteConSede.sedes as { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null }
-        setSedeId(sede.id)
-        setSedeNombre(sede.nombre)
-        setSedeLat(sede.latitud ?? null)
-        setSedeLng(sede.longitud ?? null)
-        setSedeRadio(sede.radio_gps ?? 100)
+          if (anySede?.sedes) {
+            sedeData = anySede.sedes as any
+          }
+        }
       }
+
+      if (!sedeData) {
+        setError("No tienes una sede asignada. Contacta a tu supervisor.")
+        setQrValido(false)
+        return
+      }
+
+      setSedeId(sedeData.id)
+      setSedeNombre(sedeData.nombre)
+      setSedeLat(sedeData.latitud ?? null)
+      setSedeLng(sedeData.longitud ?? null)
+      setSedeRadio(sedeData.radio_gps ?? 100)
 
       setStep("gps")
     } catch {
