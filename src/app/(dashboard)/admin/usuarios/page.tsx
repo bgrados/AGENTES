@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -65,6 +65,8 @@ export default function UsuariosPage() {
   const [qrInfo, setQrInfo] = useState<{ codigo: string; nombre: string; email: string } | null>(null)
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [generando, setGenerando] = useState(false)
+  const [creandoAcceso, setCreandoAcceso] = useState(false)
+  const [accesoMsg, setAccesoMsg] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([cargarUsuarios(), cargarRoles(), cargarEmpresas()])
@@ -189,6 +191,33 @@ export default function UsuariosPage() {
   function abrirEliminar(u: Usuario) {
     setEliminando(u)
     setDeleteDialogOpen(true)
+  }
+
+  async function crearAcceso(u: Usuario) {
+    if (!u.dni || u.dni.length !== 8) {
+      setAccesoMsg("El usuario debe tener DNI de 8 dígitos")
+      return
+    }
+    setCreandoAcceso(true)
+    setAccesoMsg(null)
+    try {
+      const res = await fetch("/api/auth/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario_id: u.id, email: u.email, password: u.dni }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setAccesoMsg("Acceso creado: usuario=" + u.email + " clave=" + u.dni)
+        cargarUsuarios()
+      } else {
+        setAccesoMsg("Error: " + data.error)
+      }
+    } catch {
+      setAccesoMsg("Error de conexión")
+    } finally {
+      setCreandoAcceso(false)
+    }
   }
 
   const abrirQR = useCallback((u: Usuario) => {
@@ -447,10 +476,19 @@ export default function UsuariosPage() {
                           <DropdownMenuItem onClick={() => abrirQR({ ...u, codigo: codigoQR })}>
                             <QrCode className="h-4 w-4 mr-2" /> Ver QR
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => crearAcceso(u)} disabled={creandoAcceso || !u.dni || u.dni.length !== 8}>
+                            {creandoAcceso ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Camera className="h-4 w-4 mr-2" />}
+                            Crear acceso
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => abrirEliminar(u)} className="text-red-500 focus:text-red-500">
                             <Trash2 className="h-4 w-4 mr-2" /> Eliminar
                           </DropdownMenuItem>
                         </DropdownMenuContent>
+                        {accesoMsg && (
+                          <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-popover px-4 py-3 text-sm shadow-lg border max-w-sm" onClick={() => setAccesoMsg(null)}>
+                            {accesoMsg}
+                          </div>
+                        )}
                       </DropdownMenu>
                     </div>
                   </div>

@@ -159,7 +159,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "fixed left-0 top-16 z-30 flex h-[calc(100vh-4rem)] flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-300",
-        sidebarOpen ? "w-64" : "w-0 overflow-hidden md:w-16",
+        sidebarOpen ? "w-64" : "w-0 overflow-hidden",
       )}
     >
       <ScrollArea className="flex-1 py-2">

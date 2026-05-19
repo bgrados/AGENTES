@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
 import { useGPS } from "@/hooks/use-gps"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { MapPin, Camera, QrCode, CheckCircle, Loader2 } from "lucide-react"
+import { MapPin, Camera, QrCode, CheckCircle, Loader2, Satellite } from "lucide-react"
 import { QRScanner } from "@/components/qr/qr-scanner"
 import { PhotoCapture } from "@/components/camera/photo-capture"
 import { useAttendance } from "@/hooks/use-attendance"
@@ -20,7 +20,7 @@ type Step = "scanner" | "gps" | "foto" | "confirmar" | "completado"
 export default function AsistenciaPage() {
   const { usuario, isLoading: authLoading } = useAuthStore()
   const { supabase } = useSupabase()
-  const { gpsActivo, validarDistancia, obtenerPosicion } = useGPS()
+  const { gpsActivo, ubicacionActual, validarDistancia, iniciarTracking } = useGPS()
   const { marcar, marcando } = useAttendance()
 
   const [step, setStep] = useState<Step>("scanner")
@@ -39,6 +39,10 @@ export default function AsistenciaPage() {
   const [sedeRadio, setSedeRadio] = useState<number>(100)
   const [agenteRecordId, setAgenteRecordId] = useState<string | null>(null)
   const [agenteNombre, setAgenteNombre] = useState("")
+
+  useEffect(() => {
+    iniciarTracking()
+  }, [iniciarTracking])
 
   const handleScan = useCallback(async (codigo: string) => {
     setEscaneando(true)
@@ -119,42 +123,44 @@ export default function AsistenciaPage() {
     setValidandoGPS(true)
     setError("")
 
-    try {
-      const pos = await obtenerPosicion()
-      const coords: Coordenadas = {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        precision: pos.coords.accuracy,
-      }
-      setGpsCoords(coords)
-
-      const errores: string[] = []
-
-      if (pos.coords.accuracy > GPS_CONFIG.PRECISION_MINIMA) {
-        errores.push(`Precisión GPS baja: ${Math.round(pos.coords.accuracy)}m`)
-      }
-
-      if (sedeLat !== null && sedeLng !== null) {
-        const distancia = validarDistancia(coords.lat, coords.lng, sedeLat, sedeLng)
-        if (distancia > sedeRadio) {
-          errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeRadio}m)`)
-        }
-      }
-
-      if (errores.length > 0) {
-        setError(errores.join(". "))
-        setGpsValidado(false)
-        return
-      }
-
-      setGpsValidado(true)
-      setStep("foto")
-    } catch {
-      setError("No se pudo obtener ubicación. Activa el GPS.")
-    } finally {
+    const pos = ubicacionActual
+    if (!pos) {
+      setError("Esperando señal GPS...")
       setValidandoGPS(false)
+      return
     }
-  }, [obtenerPosicion, validarDistancia, sedeLat, sedeLng, sedeRadio])
+
+    const coords: Coordenadas = {
+      lat: pos.lat,
+      lng: pos.lng,
+      precision: pos.precision,
+    }
+    setGpsCoords(coords)
+
+    const errores: string[] = []
+
+    if (pos.precision > GPS_CONFIG.PRECISION_MINIMA) {
+      errores.push(`Precisión GPS baja: ${Math.round(pos.precision)}m`)
+    }
+
+    if (sedeLat !== null && sedeLng !== null) {
+      const distancia = validarDistancia(coords.lat, coords.lng, sedeLat, sedeLng)
+      if (distancia > sedeRadio) {
+        errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeRadio}m)`)
+      }
+    }
+
+    if (errores.length > 0) {
+      setError(errores.join(". "))
+      setGpsValidado(false)
+      setValidandoGPS(false)
+      return
+    }
+
+    setGpsValidado(true)
+    setStep("foto")
+    setValidandoGPS(false)
+  }, [ubicacionActual, validarDistancia, sedeLat, sedeLng, sedeRadio])
 
   const handleFoto = useCallback(async () => {
     setStep("confirmar")
@@ -261,19 +267,27 @@ export default function AsistenciaPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {gpsCoords && (
-              <div className="rounded-lg bg-muted p-3 text-sm">
-                <p>Lat: {gpsCoords.lat.toFixed(6)}</p>
-                <p>Lng: {gpsCoords.lng.toFixed(6)}</p>
-                <p>Precisión: {gpsCoords.precision?.toFixed(0)}m</p>
+            {ubicacionActual ? (
+              <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
+                <div className="flex items-center gap-2">
+                  <Satellite className="h-4 w-4 text-green-500" />
+                  <span className="font-medium text-green-500">GPS activo</span>
+                </div>
+                <p>Lat: {ubicacionActual.lat.toFixed(6)}</p>
+                <p>Lng: {ubicacionActual.lng.toFixed(6)}</p>
+                <p>Precisión: {ubicacionActual.precision.toFixed(0)}m</p>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Obteniendo ubicación...
               </div>
             )}
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
             )}
-            <Button className="w-full" onClick={handleGPSValidation} disabled={validandoGPS}>
-              {validandoGPS ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {gpsValidado ? "Ubicación Validada" : "Validar Ubicación"}
+            <Button className="w-full" onClick={handleGPSValidation} disabled={!ubicacionActual}>
+              Validar Ubicación
             </Button>
           </CardContent>
         </Card>
