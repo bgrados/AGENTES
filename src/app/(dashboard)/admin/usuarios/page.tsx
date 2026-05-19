@@ -11,8 +11,9 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/shared/empty-state"
-import { Users, Plus, Pencil, Trash2, Camera, Shield, ShieldCheck, UserCog, User, AlertTriangle, QrCode, Download, Loader2 } from "lucide-react"
+import { Users, Plus, Pencil, Trash2, Camera, Shield, ShieldCheck, UserCog, User, AlertTriangle, QrCode, Download, Loader2, MoreHorizontal } from "lucide-react"
 import QRCode from "qrcode"
 
 interface Usuario {
@@ -61,7 +62,7 @@ export default function UsuariosPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
   const [qrInfo, setQrInfo] = useState<{ codigo: string; nombre: string; email: string } | null>(null)
-  const qrCanvasRef = useRef<HTMLCanvasElement>(null)
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [generando, setGenerando] = useState(false)
 
   useEffect(() => {
@@ -197,17 +198,19 @@ export default function UsuariosPage() {
     setQrDialogOpen(true)
   }, [])
 
-  useEffect(() => {
-    if (!qrDialogOpen || !qrInfo || !qrCanvasRef.current) return
-    setGenerando(true)
-    QRCode.toCanvas(qrCanvasRef.current, qrInfo.codigo, {
-      width: 280,
-      margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
-    })
-      .catch(() => {})
-      .finally(() => setGenerando(false))
-  }, [qrDialogOpen, qrInfo])
+  const qrCanvasRefCallback = useCallback((node: HTMLCanvasElement | null) => {
+    qrCanvasRef.current = node
+    if (node && qrInfo && qrDialogOpen) {
+      setGenerando(true)
+      QRCode.toCanvas(node, qrInfo.codigo, {
+        width: 280,
+        margin: 2,
+        color: { dark: "#000000", light: "#ffffff" },
+      })
+        .catch(() => {})
+        .finally(() => setGenerando(false))
+    }
+  }, [qrInfo, qrDialogOpen])
 
   function descargarQR() {
     const canvas = qrCanvasRef.current
@@ -379,7 +382,7 @@ export default function UsuariosPage() {
                   </div>
                 )}
                 <div className={`rounded-xl border bg-white p-3 shadow-sm ${generando ? "opacity-30" : ""}`}>
-                  <canvas ref={qrCanvasRef} className="h-[280px] w-[280px] max-w-full" />
+                  <canvas ref={qrCanvasRefCallback} className="h-[280px] w-[280px] max-w-full" />
                 </div>
               </div>
               <div className="text-center">
@@ -430,20 +433,25 @@ export default function UsuariosPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge variant={u.activo ? "success" : "secondary"} className="hidden sm:inline-flex">{u.activo ? "Activo" : "Inactivo"}</Badge>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); abrirQR({ ...u, codigo: codigoQR }); }}
-                        className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary hover:bg-primary/25 active:bg-primary/35 transition-colors"
-                        title="Ver QR"
-                      >
-                        <QrCode className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); abrirEliminar(u); }}
-                        className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/15 text-red-500 hover:bg-red-500/25 active:bg-red-500/35 transition-colors"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted hover:bg-accent active:bg-accent transition-colors"
+                            title="Acciones"
+                          >
+                            <MoreHorizontal className="h-5 w-5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem onClick={() => abrirQR({ ...u, codigo: codigoQR })}>
+                            <QrCode className="h-4 w-4 mr-2" /> Ver QR
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => abrirEliminar(u)} className="text-red-500 focus:text-red-500">
+                            <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 )

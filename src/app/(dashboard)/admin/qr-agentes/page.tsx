@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Search, Printer, Building2 } from "lucide-react"
 
 interface AgenteQR {
@@ -21,6 +22,7 @@ export default function QrAgentesPage() {
   const [agentes, setAgentes] = useState<AgenteQR[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [qrMaximizado, setQrMaximizado] = useState<AgenteQR | null>(null)
 
   useEffect(() => {
     cargarDatos()
@@ -87,7 +89,11 @@ export default function QrAgentesPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 print:grid-cols-4 print:gap-3">
         {filtrados.map(agente => (
-          <Card key={agente.codigo} className="print:border print:break-inside-avoid">
+          <Card
+            key={agente.codigo}
+            className="print:border print:break-inside-avoid cursor-pointer hover:ring-2 hover:ring-primary/50 transition-shadow"
+            onClick={() => setQrMaximizado(agente)}
+          >
             <CardContent className="flex flex-col items-center p-4 print:p-3">
               <img
                 src={`/qr/${agente.codigo}.png`}
@@ -131,6 +137,29 @@ export default function QrAgentesPage() {
           nav, header, aside { display: none !important; }
         }
       `}</style>
+
+      <Dialog open={!!qrMaximizado} onOpenChange={(open) => { if (!open) setQrMaximizado(null) }}>
+        <DialogContent className="max-w-md">
+          {qrMaximizado && (
+            <div className="flex flex-col items-center gap-4 py-4">
+              <img
+                src={`/qr/${qrMaximizado.codigo}.png`}
+                alt={qrMaximizado.codigo}
+                className="w-72 h-72 max-w-full"
+              />
+              <div className="text-center space-y-1">
+                <p className="text-lg font-bold">{qrMaximizado.nombre}</p>
+                <p className="text-sm text-muted-foreground">{qrMaximizado.codigo}</p>
+                <p className="text-xs text-muted-foreground">{qrMaximizado.email}</p>
+                <div className="flex items-center justify-center gap-2 mt-2">
+                  <Badge variant="outline">{qrMaximizado.sede}</Badge>
+                  <Badge variant="outline">{qrMaximizado.turno}</Badge>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
