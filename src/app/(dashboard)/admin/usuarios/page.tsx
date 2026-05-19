@@ -186,24 +186,24 @@ export default function UsuariosPage() {
     setDeleteDialogOpen(true)
   }
 
-  const abrirQR = useCallback(async (u: Usuario) => {
+  const abrirQR = useCallback((u: Usuario) => {
     const codigo = u.agentes?.codigo || u.codigo
     if (!codigo) return
     setQrInfo({ codigo, nombre: `${u.nombre} ${u.apellido}`, email: u.email })
     setQrDialogOpen(true)
-    setGenerando(true)
-    await new Promise(r => setTimeout(r, 50))
-    if (qrCanvasRef.current) {
-      try {
-        await QRCode.toCanvas(qrCanvasRef.current, codigo, {
-          width: 280,
-          margin: 2,
-          color: { dark: "#000000", light: "#ffffff" },
-        })
-      } catch {}
-    }
-    setGenerando(false)
   }, [])
+
+  useEffect(() => {
+    if (!qrDialogOpen || !qrInfo || !qrCanvasRef.current) return
+    setGenerando(true)
+    QRCode.toCanvas(qrCanvasRef.current, qrInfo.codigo, {
+      width: 280,
+      margin: 2,
+      color: { dark: "#000000", light: "#ffffff" },
+    })
+      .catch(() => {})
+      .finally(() => setGenerando(false))
+  }, [qrDialogOpen, qrInfo])
 
   function descargarQR() {
     const canvas = qrCanvasRef.current
@@ -343,7 +343,13 @@ export default function UsuariosPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <Dialog open={qrDialogOpen} onOpenChange={(open) => {
+              if (!open) {
+                const ctx = qrCanvasRef.current?.getContext("2d")
+                if (ctx) ctx.clearRect(0, 0, 280, 280)
+              }
+              setQrDialogOpen(open)
+            }}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -352,13 +358,16 @@ export default function UsuariosPage() {
               </DialogTitle>
             </DialogHeader>
             <div className="flex flex-col items-center py-4 space-y-3">
-              {generando ? (
-                <Loader2 className="h-20 w-20 animate-spin text-muted-foreground" />
-              ) : (
-                <div className="rounded-xl border bg-white p-3 shadow-sm">
-                  <canvas ref={qrCanvasRef} className="h-[280px] w-[280px]" />
+              <div className="relative">
+                {generando && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/80">
+                    <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+                <div className={`rounded-xl border bg-white p-3 shadow-sm ${generando ? "opacity-30" : ""}`}>
+                  <canvas ref={qrCanvasRef} className="h-[280px] w-[280px] max-w-full" />
                 </div>
-              )}
+              </div>
               <div className="text-center">
                 <p className="font-bold">{qrInfo?.nombre}</p>
                 <p className="text-sm text-muted-foreground">{qrInfo?.codigo}</p>
@@ -383,33 +392,35 @@ export default function UsuariosPage() {
           <ScrollArea className="h-[600px]">
             <div className="divide-y">
               {usuarios.map(u => (
-                <div key={u.id} className={`flex items-center justify-between p-4 ${!u.activo ? "opacity-50" : ""}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      {roleIcons[u.roles?.nombre || ""] || <User className="h-4 w-4" />}
-                    </div>
-                    <div>
-                      <p className="font-medium">{u.nombre} {u.apellido}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{u.email}</span>
-                        <span>•</span>
-                        <Badge variant="outline" className="text-xs">{rolNombre(u.roles?.nombre)}</Badge>
-                        {u.agentes?.codigo && <><span>•</span><span>{u.agentes.codigo}</span></>}
-                      </div>
+                <div
+                  key={u.id}
+                  className={`flex items-center gap-3 p-4 cursor-pointer transition-colors hover:bg-accent/50 active:bg-accent ${!u.activo ? "opacity-50" : ""}`}
+                  onClick={() => abrirEditar(u)}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                    {roleIcons[u.roles?.nombre || ""] || <User className="h-4 w-4" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium truncate">{u.nombre} {u.apellido}</p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                      <span className="truncate max-w-[120px] sm:max-w-none">{u.email}</span>
+                      <span className="hidden sm:inline">•</span>
+                      <Badge variant="outline" className="text-xs shrink-0">{rolNombre(u.roles?.nombre)}</Badge>
+                      {u.agentes?.codigo && <><span className="hidden sm:inline">•</span><span className="shrink-0">{u.agentes.codigo}</span></>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge variant={u.activo ? "success" : "secondary"} className="hidden sm:inline-flex">{u.activo ? "Activo" : "Inactivo"}</Badge>
                     {u.agentes?.codigo && (
-                      <Button variant="ghost" size="sm" onClick={() => abrirQR(u)} title="Ver QR">
-                        <QrCode className="h-3.5 w-3.5" />
+                      <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={(e) => { e.stopPropagation(); abrirQR(u); }} title="Ver QR">
+                        <QrCode className="h-5 w-5" />
                       </Button>
                     )}
-                    <Badge variant={u.activo ? "success" : "secondary"}>{u.activo ? "Activo" : "Inactivo"}</Badge>
-                    <Button variant="ghost" size="sm" onClick={() => abrirEditar(u)}>
-                      <Pencil className="h-3 w-3" />
+                    <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={(e) => { e.stopPropagation(); abrirEditar(u); }} title="Editar">
+                      <Pencil className="h-5 w-5" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => abrirEliminar(u)}>
-                      <Trash2 className="h-3 w-3 text-red-500" />
+                    <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-red-200 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={(e) => { e.stopPropagation(); abrirEliminar(u); }} title="Eliminar">
+                      <Trash2 className="h-5 w-5 text-red-500" />
                     </Button>
                   </div>
                 </div>
