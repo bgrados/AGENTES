@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useSecureGps } from "@/hooks/use-secure-gps"
@@ -12,24 +12,46 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { Camera, Send, MapPin, Clock, FileText, Sun, Moon, Loader2, CheckCircle } from "lucide-react"
+import { Camera, Send, MapPin, Clock, FileText, Sun, Moon, Loader2, CheckCircle, Eye } from "lucide-react"
 import { REPORTES_DIA, REPORTES_NOCHE } from "@/lib/constants"
 import { SecureCamera } from "@/components/camera/secure-camera"
-import type { ReportePayload } from "@/types/app"
+
+function generarTextoReporte(opts: {
+  sedeNombre: string
+  agenteNombre: string
+  turno: string
+  hora: string
+  novedades: string
+}) {
+  const esNoche = Number(opts.hora.split(":")[0]) >= 19 || Number(opts.hora.split(":")[0]) < 7
+  const saludo = esNoche ? "🌙" : "☀️"
+
+  return `${saludo} REPORTE OPERATIVO - ${opts.sedeNombre}
+Agente: ${opts.agenteNombre}
+Turno: ${opts.turno.toUpperCase()}
+Hora: ${opts.hora}
+
+Novedades:
+${opts.novedades || "Sin novedades relevantes."}
+
+_Enviado desde Seguridad Control App_`
+}
 
 export default function ReportesPage() {
   const { usuario, isLoading } = useAuthStore()
   const { supabase } = useSupabase()
-  const { requestLocation, location: gpsCoords, loading: gpsLoading } = useSecureGps()
+  const { requestLocation, location: gpsCoords } = useSecureGps()
 
   const [novedades, setNovedades] = useState("")
   const [horaSeleccionada, setHoraSeleccionada] = useState("")
   const [fotoData, setFotoData] = useState<string | null>(null)
   const [turno, setTurno] = useState<"dia" | "noche">("noche")
   const [cargandoTurno, setCargandoTurno] = useState(true)
-  const [enviando, setEnviando] = useState(false)
-  const [enviado, setEnviado] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
+  const [confirmado, setConfirmado] = useState(false)
   const [error, setError] = useState("")
+  const [textoPreview, setTextoPreview] = useState("")
+  const [mensajeWhatsApp, setMensajeWhatsApp] = useState("")
 
   const [sedeId, setSedeId] = useState<string>("")
   const [sedeNombre, setSedeNombre] = useState<string>("")
@@ -80,14 +102,14 @@ export default function ReportesPage() {
 
   const rangoGpos = turno === "dia"
     ? [
-        { id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno", icon: Sun, horas: ["07:00"], requiere_foto: true, requiere_novedades: false, color: "default" as const },
-        { id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["19:00"], requiere_foto: true, requiere_novedades: false, color: "default" as const },
+        { id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno", icon: Sun, horas: ["07:00"], requiere_foto: true, requiere_novedades: false },
+        { id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["19:00"], requiere_foto: true, requiere_novedades: false },
       ]
     : [
-        { id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno noche", icon: Sun, horas: ["19:00"], requiere_foto: true, requiere_novedades: false, color: "default" as const },
-        { id: "estandar", label: "Reporte Estándar", descripcion: "Reporte horario sin foto", icon: FileText, horas: ["20:00","21:00","22:00","23:00","00:00"], requiere_foto: false, requiere_novedades: true, color: "secondary" as const },
-        { id: "con_foto", label: "Reporte con Foto", descripcion: "Reporte horario con foto de evidencia", icon: Camera, horas: ["01:00","02:00","03:00","04:00","05:00"], requiere_foto: true, requiere_novedades: true, color: "default" as const },
-        { id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["07:00"], requiere_foto: true, requiere_novedades: false, color: "default" as const },
+        { id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno noche", icon: Sun, horas: ["19:00"], requiere_foto: true, requiere_novedades: false },
+        { id: "estandar", label: "Reporte Estándar", descripcion: "Reporte horario sin foto", icon: FileText, horas: ["20:00","21:00","22:00","23:00","00:00"], requiere_foto: false, requiere_novedades: true },
+        { id: "con_foto", label: "Reporte con Foto", descripcion: "Reporte horario con foto de evidencia", icon: Camera, horas: ["01:00","02:00","03:00","04:00","05:00"], requiere_foto: true, requiere_novedades: true },
+        { id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["07:00"], requiere_foto: true, requiere_novedades: false },
       ]
 
   const grupos = rangoGpos.map(g => ({
@@ -106,12 +128,29 @@ export default function ReportesPage() {
     setHoraSeleccionada(hora)
     setFotoData(null)
     setNovedades("")
-    setEnviado(false)
+    setConfirmado(false)
+    setTextoPreview("")
+    setMensajeWhatsApp("")
     setError("")
   }
 
-  async function handleSubmit() {
-    setEnviando(true)
+  const textoGenerado = useMemo(() => {
+    if (!horaSeleccionada) return ""
+    return generarTextoReporte({
+      sedeNombre,
+      agenteNombre,
+      turno,
+      hora: horaSeleccionada,
+      novedades: novedades || "Sin novedades relevantes.",
+    })
+  }, [horaSeleccionada, sedeNombre, agenteNombre, turno, novedades])
+
+  useEffect(() => {
+    setTextoPreview(textoGenerado)
+  }, [textoGenerado])
+
+  async function handleConfirmar() {
+    setConfirmando(true)
     setError("")
 
     try {
@@ -122,7 +161,7 @@ export default function ReportesPage() {
       let pos = gpsCoords
       if (!pos) pos = await requestLocation()
 
-      const payload: ReportePayload = {
+      const payload = {
         agente_id: agenteId,
         sede_id: sedeId,
         turno,
@@ -131,7 +170,7 @@ export default function ReportesPage() {
         latitud: pos.latitud,
         longitud: pos.longitud,
         foto_data: fotoData ?? undefined,
-        novedades: novedades || "Sin novedades relevantes.",
+        novedades: textoPreview,
       }
 
       await syncEngine.queueOperation("reportes", "INSERT", payload)
@@ -143,16 +182,22 @@ export default function ReportesPage() {
         turno,
         hora: horaSeleccionada,
         tipoReporte: payload.tipo_reporte,
-        novedades: payload.novedades!,
+        novedades: textoPreview,
       })
 
       setReportados(prev => new Set(prev).add(horaSeleccionada))
-      setEnviado(true)
-      window.open(wpLink, '_blank')
+      setConfirmado(true)
+      setMensajeWhatsApp(wpLink)
     } catch (err: any) {
-      setError(err.message || "Error al procesar el reporte.")
+      setError(err.message || "Error al confirmar el reporte.")
     } finally {
-      setEnviando(false)
+      setConfirmando(false)
+    }
+  }
+
+  function handleAbrirWhatsApp() {
+    if (mensajeWhatsApp) {
+      window.open(mensajeWhatsApp, '_blank')
     }
   }
 
@@ -201,90 +246,93 @@ export default function ReportesPage() {
               </div>
             </div>
           ))}
-          {grupos.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">No hay horarios disponibles</p>
-          )}
-
-          {horaSeleccionada && (
-            <div className="border-t pt-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">{configActual?.label || horaSeleccionada}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {turno === "dia" ? "Turno Día" : "Turno Noche"} — {sedeNombre}
-                  </p>
-                </div>
-                {enviado && (
-                  <Badge variant="success" className="gap-1">
-                    <CheckCircle className="h-3 w-3" /> Enviado
-                  </Badge>
-                )}
-              </div>
-
-              {grupoActual?.requiere_foto && !enviado && (
-                <div>
-                  <Label>Foto de Evidencia</Label>
-                  <div className="mt-1">
-                    <SecureCamera
-                      gpsData={gpsCoords ? { lat: gpsCoords.latitud, lng: gpsCoords.longitud } : null}
-                      onCapture={(webpBlob) => {
-                        const reader = new FileReader()
-                        reader.readAsDataURL(webpBlob)
-                        reader.onloadend = () => setFotoData(reader.result as string)
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {grupoActual?.requiere_novedades && !enviado && (
-                <div className="space-y-2">
-                  <Label htmlFor="novedades">Novedades Operativas</Label>
-                  <textarea
-                    id="novedades"
-                    placeholder="Describe las novedades operativas..."
-                    value={novedades}
-                    onChange={(e) => setNovedades(e.target.value)}
-                    className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  />
-                </div>
-              )}
-
-              {!grupoActual?.requiere_foto && !grupoActual?.requiere_novedades && !enviado && (
-                <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
-                  <FileText className="h-8 w-8 mb-1 opacity-30" />
-                  <p className="text-sm">Reporte de {configActual?.label || horaSeleccionada}</p>
-                </div>
-              )}
-
-              {error && (
-                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
-              )}
-
-              {!enviado && (
-                <>
-                  <div className="flex items-center justify-between rounded-lg bg-muted p-2 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> GPS Seguro
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Send className="h-3 w-3" /> WhatsApp Auto
-                    </span>
-                  </div>
-
-                  <Button className="w-full" size="lg" onClick={handleSubmit} disabled={enviando}>
-                    {enviando ? (
-                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando Reporte...</>
-                    ) : (
-                      <><Send className="mr-2 h-4 w-4" /> Enviar Reporte y Abrir WhatsApp</>
-                    )}
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
+
+      {horaSeleccionada && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {configActual?.label || horaSeleccionada}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {grupoActual?.requiere_foto && !confirmado && (
+              <div>
+                <Label>Foto de Evidencia</Label>
+                <div className="mt-1">
+                  <SecureCamera
+                    gpsData={gpsCoords ? { lat: gpsCoords.latitud, lng: gpsCoords.longitud } : null}
+                    onCapture={(webpBlob) => {
+                      const reader = new FileReader()
+                      reader.readAsDataURL(webpBlob)
+                      reader.onloadend = () => setFotoData(reader.result as string)
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {grupoActual?.requiere_novedades && !confirmado && (
+              <div className="space-y-2">
+                <Label htmlFor="novedades">Novedades Operativas</Label>
+                <textarea
+                  id="novedades"
+                  placeholder="Describe las novedades operativas..."
+                  value={novedades}
+                  onChange={(e) => setNovedades(e.target.value)}
+                  className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </div>
+            )}
+
+            {/* Vista previa del reporte */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5" /> Vista previa del reporte
+              </Label>
+              <textarea
+                value={textoPreview}
+                onChange={(e) => setTextoPreview(e.target.value)}
+                className="w-full min-h-[140px] rounded-md border border-input bg-muted/30 px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+            )}
+
+            {!confirmado ? (
+              <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={confirmando}>
+                {confirmando ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Confirmando Reporte...</>
+                ) : (
+                  <><CheckCircle className="mr-2 h-4 w-4" /> Confirmar Reporte</>
+                )}
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
+                  <CheckCircle className="h-5 w-5 shrink-0" />
+                  Reporte confirmado y guardado
+                </div>
+                <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+                  <p className="font-medium mb-1">Instrucciones:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Toca el botón para abrir WhatsApp</li>
+                    <li>El mensaje ya estará pre-escrito</li>
+                    <li>Adjunta la foto si es necesario</li>
+                    <li>Envía el mensaje</li>
+                  </ol>
+                </div>
+                <Button className="w-full" size="lg" variant="default" onClick={handleAbrirWhatsApp}>
+                  <Send className="mr-2 h-4 w-4" /> Enviar Reporte a WhatsApp
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
