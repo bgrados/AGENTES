@@ -130,12 +130,14 @@ export default function AsistenciaPage() {
 
   const buscandoRelevo = useRef(false)
 
-  const actualizarReporte = useCallback(() => {
+  useEffect(() => {
     if (!sedeData || !agenteNombre) return
+    const saludo = obtenerSaludo()
+    const fecha = formatearFecha(new Date())
     setReporteTexto(generarReporte({
       tipo,
-      saludo: obtenerSaludo(),
-      fecha: formatearFecha(new Date()),
+      saludo,
+      fecha,
       sedeNombre: sedeData.nombre,
       sedeDireccion: sedeData.direccion,
       agenteNombre,
@@ -145,47 +147,49 @@ export default function AsistenciaPage() {
     }))
   }, [tipo, sedeData, agenteNombre, turnoAgente, relevoNombre, edificioEstado])
 
-  useEffect(() => { actualizarReporte() }, [actualizarReporte])
-
   const autoDetectarTipoYRelevo = useCallback(async (agenteId: string) => {
-    const { data: lastOwn } = await supabaseAny
-      .from("asistencia")
-      .select("tipo, created_at")
-      .eq("agente_id", agenteId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const today = new Date().toDateString()
-    const lastDate = lastOwn?.created_at ? new Date(lastOwn.created_at).toDateString() : null
-    const detected = lastOwn?.tipo === "entrada" && lastDate === today ? "salida" : "entrada"
-    setTipo(detected)
-
-    if (!sedeData) return
-    buscandoRelevo.current = true
-    const { data: lastOther } = await supabaseAny
-      .from("asistencia")
-      .select("agente_id")
-      .eq("sede_id", sedeData.id)
-      .neq("agente_id", agenteId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (lastOther?.agente_id) {
-      const { data: a } = await supabaseAny
-        .from("agentes")
-        .select("usuario_id")
-        .eq("id", lastOther.agente_id)
+    try {
+      const { data: lastOwn } = await supabaseAny
+        .from("asistencia")
+        .select("tipo, created_at")
+        .eq("agente_id", agenteId)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle()
-      if (a?.usuario_id) {
-        const { data: u } = await supabaseAny
-          .from("usuarios")
-          .select("nombre, apellido")
-          .eq("id", a.usuario_id)
+
+      const today = new Date().toDateString()
+      const lastDate = lastOwn?.created_at ? new Date(lastOwn.created_at).toDateString() : null
+      const detected = lastOwn?.tipo === "entrada" && lastDate === today ? "salida" : "entrada"
+      setTipo(detected)
+
+      if (!sedeData) return
+      buscandoRelevo.current = true
+      const { data: lastOther } = await supabaseAny
+        .from("asistencia")
+        .select("agente_id")
+        .eq("sede_id", sedeData.id)
+        .neq("agente_id", agenteId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (lastOther?.agente_id) {
+        const { data: a } = await supabaseAny
+          .from("agentes")
+          .select("usuario_id")
+          .eq("id", lastOther.agente_id)
           .maybeSingle()
-        if (u) setRelevoNombre(`${u.nombre} ${u.apellido}`)
+        if (a?.usuario_id) {
+          const { data: u } = await supabaseAny
+            .from("usuarios")
+            .select("nombre, apellido")
+            .eq("id", a.usuario_id)
+            .maybeSingle()
+          if (u) setRelevoNombre(`${u.nombre} ${u.apellido}`)
+        }
       }
+    } catch (e) {
+      console.warn("Error auto-detectando tipo/relevo:", e)
     }
     buscandoRelevo.current = false
   }, [supabaseAny, sedeData])
@@ -301,13 +305,14 @@ export default function AsistenciaPage() {
     }
 
     setStep("completado")
-
-    try {
-      const numero = sedeData.whatsapp || "51910545980"
-      const link = `https://wa.me/${numero.replace(/\D/g, "")}?text=${encodeURIComponent(textoFinal)}`
-      window.open(link, "_blank")
-    } catch {}
   }, [usuario, gpsCoords, agenteRecordId, sedeData, reporteTexto, marcar, tipo, codigoEscanado, fotoData])
+
+  function abrirWhatsApp() {
+    if (!sedeData) return
+    const numero = sedeData.whatsapp || "51910545980"
+    const link = `https://wa.me/${numero.replace(/\D/g, "")}?text=${encodeURIComponent(reporteTexto)}`
+    window.open(link, "_blank")
+  }
 
   const opcionesEdificio: { value: EdificioEstado; label: string }[] = sedeData?.tiene_almacen
     ? [
@@ -562,8 +567,8 @@ export default function AsistenciaPage() {
 
             <div className="flex flex-col gap-2">
               <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={marcando}>
-                {marcando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Confirmar y enviar a WhatsApp
+                {marcando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                Confirmar Asistencia
               </Button>
               <Button variant="outline" size="sm" onClick={() => setStep("reporte")}>
                 Volver a editar reporte
@@ -586,11 +591,15 @@ export default function AsistenciaPage() {
           <CardContent className="space-y-4 text-center">
             <p className="text-sm text-muted-foreground">
               {tipo === "entrada" ? "Ingreso" : "Salida"} registrado correctamente.
-              El reporte se ha enviado a WhatsApp.
             </p>
-            <Button variant="outline" onClick={() => window.location.href = "/agente/historial"}>
-              Ver mi historial
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button onClick={abrirWhatsApp} size="lg">
+                <Send className="mr-2 h-4 w-4" /> Enviar reporte a WhatsApp
+              </Button>
+              <Button variant="outline" onClick={() => window.location.href = "/agente/historial"}>
+                Ver mi historial
+              </Button>
+            </div>
             <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
               Nueva marcación
             </Button>
