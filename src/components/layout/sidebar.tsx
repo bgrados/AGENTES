@@ -139,6 +139,12 @@ const navItems: NavItem[] = [
     roles: ["admin"],
   },
   {
+    label: "Reportes Horarios",
+    href: "/admin/reportes-horarios",
+    icon: Clock,
+    roles: ["admin"],
+  },
+  {
     label: "Usuarios",
     href: "/admin/usuarios",
     icon: Users,
