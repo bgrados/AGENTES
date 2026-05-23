@@ -61,12 +61,7 @@ export default function AsistenciaPage() {
       const json = await res.json()
 
       if (!res.ok || !json.success) {
-        const msg = json.error === "agente no encontrado"
-          ? "QR inválido: agente no encontrado"
-          : json.error === "QR no corresponde al usuario"
-          ? "Este código QR no corresponde a tu usuario"
-          : json.error || "Error al validar QR"
-        setError(msg)
+        setError(json.error || "Error al validar QR")
         setQrValido(false)
         return
       }

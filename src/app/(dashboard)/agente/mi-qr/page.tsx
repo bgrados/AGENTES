@@ -29,12 +29,11 @@ export default function MiQrPage() {
         .maybeSingle()
 
       if (agente) {
-        const qrContent = agente.qr_code || agente.codigo
-        setQrData(qrContent)
+        setQrData(agente.codigo)
         setAgenteInfo({
           codigo: agente.codigo,
           sede: agente.sedes?.nombre || "-",
-          qr_code: agente.qr_code || agente.codigo,
+          qr_code: agente.codigo,
         })
       }
       setCargando(false)

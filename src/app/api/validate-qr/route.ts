@@ -10,11 +10,13 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { codigo, usuario_id } = body
+    let { codigo, usuario_id } = body
 
     if (!codigo) {
       return NextResponse.json({ error: "Falta codigo" }, { status: 400 })
     }
+
+    codigo = String(codigo).trim()
 
     const { data: { session } } = await supabase.auth.getSession()
     const userJwt = session?.access_token || ""
@@ -53,8 +55,8 @@ export async function POST(request: Request) {
     })
 
     if (!agente || !agente.id) {
-      console.error("[validate-qr] not found, codigo:", codigo)
-      return NextResponse.json({ error: "agente no encontrado" }, { status: 404 })
+      console.error("[validate-qr] not found, codigo:", JSON.stringify(codigo))
+      return NextResponse.json({ error: `agente no encontrado: "${codigo}"` }, { status: 404 })
     }
 
     if (agente.usuario_id !== usuario_id) {
