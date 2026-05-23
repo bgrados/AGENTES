@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useSecureGps } from "@/hooks/use-secure-gps"
@@ -161,6 +161,26 @@ export default function ReportesPage() {
       let pos = gpsCoords
       if (!pos) pos = await requestLocation()
 
+      // Subir foto a Supabase Storage y obtener URL pública
+      let fotoUrl = ""
+      if (fotoData) {
+        try {
+          const sb = supabase as any
+          const res = await fetch(fotoData)
+          const blob = await res.blob()
+          const fileName = `${agenteId}_${horaSeleccionada.replace(":","")}_${Date.now()}.webp`
+          const { error: uploadErr } = await sb.storage
+            .from("agent-photos")
+            .upload(`reportes/${fileName}`, blob, { contentType: "image/webp", upsert: false })
+          if (!uploadErr) {
+            const { data: { publicUrl } } = sb.storage.from("agent-photos").getPublicUrl(`reportes/${fileName}`)
+            fotoUrl = publicUrl
+          }
+        } catch (e) {
+          console.warn("No se pudo subir la foto, se adjuntará después:", e)
+        }
+      }
+
       const payload = {
         agente_id: agenteId,
         sede_id: sedeId,
@@ -170,11 +190,17 @@ export default function ReportesPage() {
         latitud: pos.latitud,
         longitud: pos.longitud,
         foto_data: fotoData ?? undefined,
+        foto_url: fotoUrl || undefined,
         novedades: textoPreview,
       }
 
       await syncEngine.queueOperation("reportes", "INSERT", payload)
       syncEngine.syncAll().catch(console.error)
+
+      // Incluir enlace de la foto en el texto de WhatsApp
+      const textoFinal = fotoUrl
+        ? `${textoPreview}\n\nFoto: ${fotoUrl}`
+        : textoPreview
 
       const wpLink = generateWhatsAppLink(supervisorTelefono, {
         agenteNombre,
@@ -182,7 +208,7 @@ export default function ReportesPage() {
         turno,
         hora: horaSeleccionada,
         tipoReporte: payload.tipo_reporte,
-        novedades: textoPreview,
+        novedades: textoFinal,
       })
 
       setReportados(prev => new Set(prev).add(horaSeleccionada))
@@ -305,7 +331,7 @@ export default function ReportesPage() {
             {!confirmado ? (
               <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={confirmando}>
                 {confirmando ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Confirmando Reporte...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Subiendo foto y confirmando...</>
                 ) : (
                   <><CheckCircle className="mr-2 h-4 w-4" /> Confirmar Reporte</>
                 )}
@@ -314,15 +340,15 @@ export default function ReportesPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
                   <CheckCircle className="h-5 w-5 shrink-0" />
-                  Reporte confirmado y guardado
+                  Reporte confirmado y foto guardada
                 </div>
                 <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
                   <p className="font-medium mb-1">Instrucciones:</p>
                   <ol className="list-decimal list-inside space-y-1">
                     <li>Toca el botón para abrir WhatsApp</li>
-                    <li>El mensaje ya estará pre-escrito</li>
-                    <li>Adjunta la foto si es necesario</li>
-                    <li>Envía el mensaje</li>
+                    <li>El mensaje incluye el enlace a la foto</li>
+                    <li>El supervisor podrá abrir el enlace para verla</li>
+                    <li>Si quieres, adjunta también la foto manualmente</li>
                   </ol>
                 </div>
                 <Button className="w-full" size="lg" variant="default" onClick={handleAbrirWhatsApp}>
