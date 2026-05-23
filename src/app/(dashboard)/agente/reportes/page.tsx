@@ -53,6 +53,7 @@ export default function ReportesPage() {
   const [textoPreview, setTextoPreview] = useState("")
   const [mensajeWhatsApp, setMensajeWhatsApp] = useState("")
   const [fotoUrl, setFotoUrl] = useState("")
+  const [shareFailed, setShareFailed] = useState(false)
 
   const [sedeId, setSedeId] = useState<string>("")
   const [sedeNombre, setSedeNombre] = useState<string>("")
@@ -132,6 +133,7 @@ export default function ReportesPage() {
     setConfirmado(false)
     setTextoPreview("")
     setMensajeWhatsApp("")
+    setShareFailed(false)
     setError("")
   }
 
@@ -215,6 +217,7 @@ export default function ReportesPage() {
 
       setReportados(prev => new Set(prev).add(horaSeleccionada))
       setConfirmado(true)
+      setShareFailed(false)
       setMensajeWhatsApp(wpLink)
     } catch (err: any) {
       setError(err.message || "Error al confirmar el reporte.")
@@ -223,27 +226,29 @@ export default function ReportesPage() {
     }
   }
 
-  async function handleAbrirWhatsApp() {
+  function handleAbrirWhatsApp() {
     const textoCompartir = fotoUrl
       ? `${textoPreview}\n\nFoto: ${fotoUrl}`
       : textoPreview
 
-    // Intentar Web Share API (mobile: comparte texto + foto como archivo)
-    if (fotoData && navigator.canShare) {
-      try {
-        const res = await fetch(fotoData)
-        const blob = await res.blob()
-        const file = new File([blob], "reporte.webp", { type: "image/webp" })
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ title: "Reporte Operativo", text: textoCompartir, files: [file] })
-          return
+    if (typeof navigator.share === 'function' && fotoData) {
+      ;(async () => {
+        try {
+          const partes = fotoData.split(',')
+          const mime = partes[0].match(/:(.*?);/)?.[1] || 'image/webp'
+          const raw = atob(partes[1])
+          const u8 = new Uint8Array(raw.length)
+          for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i)
+          const file = new File([u8], 'reporte.' + mime.split('/')[1], { type: mime })
+          await navigator.share({ title: 'Reporte Operativo', text: textoCompartir, files: [file] })
+        } catch {
+          setShareFailed(true)
         }
-      } catch {
-        // share cancelado por usuario o fallback
-      }
+      })()
+      return
     }
 
-    // Fallback: wa.me link solo texto
+    // Desktop o sin foto: wa.me link directo (sincrono, no bloqueado)
     if (mensajeWhatsApp) {
       window.open(mensajeWhatsApp, '_blank')
     }
@@ -372,9 +377,21 @@ export default function ReportesPage() {
                     <li>La foto y el texto se enviarán juntos</li>
                   </ol>
                 </div>
-                <Button className="w-full" size="lg" variant="default" onClick={handleAbrirWhatsApp}>
-                  <Send className="mr-2 h-4 w-4" /> Compartir en WhatsApp
-                </Button>
+                {shareFailed && (
+                  <div className="rounded-md bg-yellow-50 dark:bg-yellow-950 p-2 text-xs text-yellow-700 dark:text-yellow-300">
+                    El envío con foto no funcionó en este dispositivo. Usa "Solo texto" y la foto se envía como enlace.
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  {fotoUrl && (
+                    <Button size="lg" variant={shareFailed ? "outline" : "default"} onClick={handleAbrirWhatsApp}>
+                      <Send className="mr-2 h-4 w-4" /> Compartir con foto
+                    </Button>
+                  )}
+                  <Button size="lg" variant="default" onClick={() => { if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank') }}>
+                    {fotoUrl ? "Enviar solo texto (foto como enlace)" : "Enviar reporte a WhatsApp"}
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
