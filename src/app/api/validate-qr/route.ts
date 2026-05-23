@@ -16,21 +16,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Falta codigo" }, { status: 400 })
     }
 
-    const supabaseAny = supabase as any
+    const { data: { session } } = await supabase.auth.getSession()
+    const userJwt = session?.access_token || ""
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    const { data: agente, error } = await supabaseAny
-      .from("agentes")
-      .select("id, codigo, usuario_id, sede_principal")
-      .eq("codigo", codigo)
-      .eq("activo", true)
-      .maybeSingle()
-
-    if (error) {
-      console.error("[validate-qr] supabase error:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!supabaseUrl || !anonKey) {
+      return NextResponse.json({ error: "Config error" }, { status: 500 })
     }
 
-    if (!agente) {
+    const restApi = supabaseUrl + "/rest/v1"
+
+    async function query(table: string, params: Record<string, string>) {
+      const url = new URL(`${restApi}/${table}`)
+      for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+      const res = await fetch(url.toString(), {
+        headers: {
+          apikey: anonKey!,
+          Authorization: `Bearer ${userJwt}`,
+          Accept: "application/vnd.pgrst.object+json",
+        },
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        console.error(`[validate-qr] REST ${table} error ${res.status}:`, text)
+        return null
+      }
+      return res.json()
+    }
+
+    const agente = await query("agentes", {
+      select: "id,codigo,usuario_id,sede_principal",
+      codigo: `eq.${codigo}`,
+      activo: "eq.true",
+      limit: "1",
+    })
+
+    if (!agente || !agente.id) {
+      console.error("[validate-qr] not found, codigo:", codigo)
       return NextResponse.json({ error: "agente no encontrado" }, { status: 404 })
     }
 
@@ -38,15 +61,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "QR no corresponde al usuario" }, { status: 403 })
     }
 
-    const { data: userData, error: userError } = await supabaseAny
-      .from("usuarios")
-      .select("nombre, apellido")
-      .eq("id", usuario_id)
-      .maybeSingle()
-
-    if (userError) {
-      console.error("[validate-qr] user lookup error:", userError)
-    }
+    const userData = await query("usuarios", {
+      select: "nombre,apellido",
+      id: `eq.${usuario_id}`,
+      limit: "1",
+    })
 
     return NextResponse.json({
       success: true,
