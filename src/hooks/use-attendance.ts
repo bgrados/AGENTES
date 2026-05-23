@@ -13,25 +13,31 @@ export function useAttendance() {
   const marcar = useCallback(async (payload: MarcarAsistenciaPayload) => {
     setMarcando(true)
     try {
-      // 1. Enviar a la cola offline en lugar de insertar directo
-      await syncEngine.queueOperation("asistencia", "INSERT", {
+      const supabaseAny = supabase as any
+
+      const insertData = {
         agente_id: payload.agente_id,
         sede_id: payload.sede_id,
-        puesto_id: payload.puesto_id ?? null,
         tipo: payload.tipo,
         latitud: payload.latitud ?? null,
         longitud: payload.longitud ?? null,
         gps_precision: payload.gps_precision ?? null,
-        qr_escanado: payload.qr_escanado ?? null,
         foto_url: payload.foto_url ?? null,
-        foto_data: payload.foto_data ?? null,
+        qr_escanado: payload.qr_escanado ?? null,
         observaciones: payload.observaciones ?? null,
         dispositivo: navigator.userAgent,
-      })
+      }
 
-      // 2. Intentar sincronizar en background inmediatamente
-      // No esperamos a que termine para darle feedback rápido al usuario
-      syncEngine.syncAll().catch(console.error)
+      const { error: directError } = await supabaseAny.from("asistencia").insert(insertData)
+
+      if (directError) {
+        console.warn("Fallo INSERT directo, encolando para sync offline:", directError.message)
+        await syncEngine.queueOperation("asistencia", "INSERT", {
+          ...insertData,
+          foto_data: payload.foto_data ?? null,
+        })
+        syncEngine.syncAll().catch(console.error)
+      }
 
       setUltimaMarcacion({
         tipo: payload.tipo,
@@ -41,12 +47,12 @@ export function useAttendance() {
 
       return { success: true }
     } catch (error) {
-      console.error("Error al encolar asistencia:", error)
+      console.error("Error al registrar asistencia:", error)
       return { success: false, error }
     } finally {
       setMarcando(false)
     }
-  }, [setUltimaMarcacion, setMarcando])
+  }, [supabase, setUltimaMarcacion, setMarcando])
 
   return { marcar, marcando }
 }
