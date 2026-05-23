@@ -67,7 +67,7 @@ export default function AsignarSedesPage() {
     const [{ data: agentes }, { data: sedes }, { data: asignaciones }] = await Promise.all([
       supabaseAny.from("agentes").select("*, usuarios!inner(nombre, apellido, email)").eq("activo", true).order("codigo"),
       supabaseAny.from("sedes").select("id, nombre, codigo").eq("activo", true).order("nombre"),
-      supabaseAny.from("agentes_sedes").select("*, sedes!inner(nombre, codigo)").eq("activo", true),
+      supabaseAny.from("agentes_sedes").select("id, agente_id, sede_id, tipo, activo, es_jefe_grupo, sedes!inner(nombre, codigo)").eq("activo", true),
     ])
 
     if (agentes) setAgentes(agentes)
@@ -168,7 +168,7 @@ export default function AsignarSedesPage() {
     setDialogOpen(false)
     setGuardando(false)
 
-    const { data: nuevas } = await supabaseAny.from("agentes_sedes").select("*, sedes!inner(nombre, codigo)").eq("agente_id", agenteSeleccionado.id).eq("activo", true)
+    const { data: nuevas } = await supabaseAny.from("agentes_sedes").select("id, agente_id, sede_id, tipo, activo, es_jefe_grupo, sedes!inner(nombre, codigo)").eq("agente_id", agenteSeleccionado.id).eq("activo", true)
     setAsignaciones(prev => ({ ...prev, [agenteSeleccionado.id]: nuevas || [] }))
   }
 

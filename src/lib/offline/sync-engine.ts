@@ -1,6 +1,5 @@
 import { db } from "./db"
 import { createClient } from "@/lib/supabase/client"
-import { v4 as uuidv4 } from "uuid"
 
 // Base de tiempo para Exponential Backoff en milisegundos (1 segundo)
 const BACKOFF_BASE_MS = 1000
@@ -116,7 +115,8 @@ export class SyncEngine {
       }
 
       // 3. Llamada RPC única para Sincronización Batch
-      const { data: rpcData, error: rpcError } = await supabase.rpc('sync_offline_payload', {
+      const supabaseAny = supabase as any
+      const { data: rpcData, error: rpcError } = await supabaseAny.rpc('sync_offline_payload', {
         payload
       })
 

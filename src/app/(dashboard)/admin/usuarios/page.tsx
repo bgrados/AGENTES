@@ -32,7 +32,7 @@ interface Usuario {
   activo: boolean
   roles?: { nombre: string }
   empresas?: { nombre: string }
-  agentes?: { id: string; codigo: string; sede_principal: string | null } | null
+  agentes?: { id: string; codigo: string; turno_asignado: string | null; sede_principal: string | null } | null
 }
 
 interface Rol { id: string; nombre: string }
@@ -56,7 +56,7 @@ export default function UsuariosPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [eliminando, setEliminando] = useState<Usuario | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
+  const [form, setForm] = useState({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true, turno: "noche" as "dia" | "noche" })
   const rucCalculado = form.dni.length === 8 ? `10${form.dni}` : ""
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
@@ -74,7 +74,7 @@ export default function UsuariosPage() {
 
   async function cargarUsuarios() {
     const supabaseAny = supabase as any
-    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(id, codigo, sede_principal)").order("apellido")
+    const { data } = await supabaseAny.from("usuarios").select("*, roles(nombre), empresas(nombre), agentes(id, codigo, turno_asignado, sede_principal)").order("apellido")
     if (data) {
       const agentesIds = data.filter((u: any) => u.agentes?.id).map((u: any) => u.agentes.id)
       const { data: sedesData } = await supabaseAny
@@ -110,7 +110,7 @@ export default function UsuariosPage() {
 
   function abrirNueva() {
     setEditando(null)
-    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true })
+    setForm({ empresa_id: "", rol_id: "", codigo: "", nombre: "", apellido: "", email: "", telefono: "", dni: "", foto_url: "", activo: true, turno: "noche" })
     setFotoFile(null)
     setDialogOpen(true)
   }
@@ -139,6 +139,7 @@ export default function UsuariosPage() {
       dni: u.dni || "",
       foto_url: u.foto_url || "",
       activo: u.activo,
+      turno: (u.agentes?.turno_asignado as "dia" | "noche") || "noche",
     })
     setFotoFile(null)
     setDialogOpen(true)
@@ -167,10 +168,15 @@ export default function UsuariosPage() {
       setSubiendo(false)
     }
 
-    const payload = { ...form, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null, ruc: rucCalculado || null }
+    const { turno, ...usuarioPayload } = form
+    const payload = { ...usuarioPayload, foto_url: fotoUrl || null, codigo: form.codigo || null, telefono: form.telefono || null, dni: form.dni || null, ruc: rucCalculado || null }
 
     if (editando) {
       await supabaseAny.from("usuarios").update(payload).eq("id", editando.id)
+      const rol = roles.find(r => r.id === form.rol_id)
+      if (rol?.nombre === "agente" || rol?.nombre === "jefe_grupo") {
+        await supabaseAny.from("agentes").update({ codigo: form.codigo, turno_asignado: turno }).eq("usuario_id", editando.id)
+      }
     } else {
       const { data: nuevoUsuario } = await supabaseAny.from("usuarios").insert(payload).select().single()
       if (nuevoUsuario) {
@@ -181,7 +187,7 @@ export default function UsuariosPage() {
           await supabaseAny.from("agentes").insert({
             usuario_id: nuevoUsuario.id,
             codigo,
-            turno_asignado: "dia",
+            turno_asignado: turno,
             activo: true,
           })
         }
@@ -365,6 +371,29 @@ export default function UsuariosPage() {
                   </Select>
                 </div>
               </div>
+              {(form.rol_id && roles.find(r => r.id === form.rol_id)?.nombre !== "admin" && roles.find(r => r.id === form.rol_id)?.nombre !== "supervisor") ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Turno</Label>
+                    <Select value={form.turno} onValueChange={v => setForm(p => ({ ...p, turno: v as "dia" | "noche" }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="dia">Día (07:00 - 19:00)</SelectItem>
+                        <SelectItem value="noche">Noche (19:00 - 07:00)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Código</Label>
+                    <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Label>Código</Label>
+                  <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="Opcional" />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>DNI</Label>
@@ -374,10 +403,6 @@ export default function UsuariosPage() {
                   <Label>RUC</Label>
                   <Input value={rucCalculado || "---"} readOnly className="bg-muted text-muted-foreground" />
                 </div>
-              </div>
-              <div>
-                <Label>Código</Label>
-                <Input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value }))} placeholder="AGT-001" />
               </div>
             </div>
             <DialogFooter>

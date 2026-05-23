@@ -31,46 +31,34 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   {
-    label: "Marcar Asistencia",
-    href: "/agente/asistencia",
-    icon: ClipboardCheck,
-    roles: ["agente"],
-  },
-  {
-    label: "Reportes",
-    href: "/agente/reportes",
-    icon: FileText,
-    roles: ["agente"],
-  },
-  {
     label: "Dashboard",
     href: "/agente",
     icon: LayoutDashboard,
-    roles: ["jefe_grupo"],
+    roles: ["agente", "jefe_grupo"],
   },
   {
     label: "Marcar Asistencia",
     href: "/agente/asistencia",
     icon: ClipboardCheck,
-    roles: ["jefe_grupo"],
+    roles: ["agente", "jefe_grupo"],
   },
   {
     label: "Reportes",
     href: "/agente/reportes",
     icon: FileText,
-    roles: ["jefe_grupo"],
+    roles: ["agente", "jefe_grupo"],
   },
   {
     label: "Historial",
     href: "/agente/historial",
     icon: Clock,
-    roles: ["jefe_grupo"],
+    roles: ["agente", "jefe_grupo"],
   },
   {
     label: "Mi QR",
     href: "/agente/mi-qr",
     icon: QrCode,
-    roles: ["jefe_grupo"],
+    roles: ["agente", "jefe_grupo"],
   },
   {
     label: "Dashboard",
@@ -142,6 +130,12 @@ const navItems: NavItem[] = [
     label: "QR Agentes",
     href: "/admin/qr-agentes",
     icon: QrCode,
+    roles: ["admin"],
+  },
+  {
+    label: "Reportes",
+    href: "/admin/reportes",
+    icon: FileText,
     roles: ["admin"],
   },
   {

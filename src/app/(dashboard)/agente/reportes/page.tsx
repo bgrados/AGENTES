@@ -6,6 +6,7 @@ import { useSupabase } from "@/providers/supabase-provider"
 import { useSecureGps } from "@/hooks/use-secure-gps"
 import { syncEngine } from "@/lib/offline/sync-engine"
 import { generateWhatsAppLink } from "@/lib/whatsapp/generate-link"
+import { obtenerSedeAgente } from "@/lib/supabase/agente-sede"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -66,14 +67,10 @@ export default function ReportesPage() {
         if (agente.turno_asignado) setTurno(agente.turno_asignado)
         if (agente.usuarios) setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
         
-        // Obtener sede
-        if (agente.sede_principal) {
-          const { data: sede } = await supabaseAny.from("sedes").select("id, nombre, supervisor_telefono").eq("id", agente.sede_principal).maybeSingle()
-          if (sede) {
-            setSedeId(sede.id)
-            setSedeNombre(sede.nombre)
-            if (sede.supervisor_telefono) setSupervisorTelefono(sede.supervisor_telefono)
-          }
+        const sede = await obtenerSedeAgente(supabaseAny, agente.id)
+        if (sede) {
+          setSedeId(sede.id)
+          setSedeNombre(sede.nombre)
         }
       }
       setCargandoTurno(false)
@@ -234,7 +231,8 @@ export default function ReportesPage() {
                     <Label>Foto de Evidencia (Marca de Agua Obligatoria)</Label>
                     <div className="mt-1">
                       <SecureCamera
-                        gpsData={gpsCoords}
+                        gpsData={gpsCoords ? { lat: gpsCoords.latitud, lng: gpsCoords.longitud } : null}
+
                         onCapture={(webpBlob) => {
                           const reader = new FileReader()
                           reader.readAsDataURL(webpBlob)
@@ -292,48 +290,6 @@ export default function ReportesPage() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Historial Local del Turno</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {Object.entries(REPORTES).filter(([hora]) => {
-              const h = Number.parseInt(hora.split(":")[0])
-              const m = Number.parseInt(hora.split(":")[1])
-              const ahora = new Date()
-              const horaActual = ahora.getHours()
-              const minActual = ahora.getMinutes()
-              return h < horaActual || (h === horaActual && m <= minActual)
-            }).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay reportes registrados hoy</p>
-            ) : (
-              Object.entries(REPORTES).filter(([hora]) => {
-                const h = Number.parseInt(hora.split(":")[0])
-                const m = Number.parseInt(hora.split(":")[1])
-                const ahora = new Date()
-                const horaActual = ahora.getHours()
-                const minActual = ahora.getMinutes()
-                return h < horaActual || (h === horaActual && m <= minActual)
-              }).map(([hora, config]) => (
-                <div key={hora} className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="flex items-center gap-3">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium">{hora}</span>
-                    <span className="text-sm text-muted-foreground">{config.label}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={config.requiere_foto ? "default" : "secondary"}>
-                      {config.requiere_foto ? "Evidencia Física" : "Solo Texto"}
-                    </Badge>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

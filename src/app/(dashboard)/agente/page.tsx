@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { Clock, ClipboardCheck, FileText, MapPin, Wifi, WifiOff, Sun, Moon } from "lucide-react"
 import { LoadingScreen } from "@/components/shared/loading-screen"
+import { obtenerSedeAgente } from "@/lib/supabase/agente-sede"
 
 export default function AgenteDashboard() {
   const { usuario, isLoading } = useAuthStore()
@@ -25,10 +26,12 @@ export default function AgenteDashboard() {
     if (!usuario) return
     const supabaseAny = supabase as any
 
-    const { data: agente } = await supabaseAny.from("agentes").select("*, sedes!sede_principal(nombre)").eq("usuario_id", usuario.id).maybeSingle()
+    const { data: agente } = await supabaseAny.from("agentes").select("*").eq("usuario_id", usuario.id).maybeSingle()
     if (!agente || !agente.id) { setCargando(false); return }
 
     setAgenteId(agente.id)
+
+    const sede = await obtenerSedeAgente(supabaseAny, agente.id)
 
     const hoy = new Date().toISOString().split("T")[0]
 
@@ -44,7 +47,7 @@ export default function AgenteDashboard() {
       reportesHoy: reportesHoy?.length || 0,
       totalReportes: totalRpt,
       turno: agente.turno_asignado,
-      sede: agente.sedes?.nombre || "-",
+      sede: sede?.nombre || "-",
       puesto: "-",
     })
     setCargando(false)

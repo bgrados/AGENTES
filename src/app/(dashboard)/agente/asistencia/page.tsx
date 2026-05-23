@@ -12,6 +12,7 @@ import { MapPin, Camera, QrCode, CheckCircle, Loader2, Satellite } from "lucide-
 import { QRScanner } from "@/components/qr/qr-scanner"
 import { SecureCamera } from "@/components/camera/secure-camera"
 import { useAttendance } from "@/hooks/use-attendance"
+import { obtenerSedeAgente } from "@/lib/supabase/agente-sede"
 import type { Coordenadas } from "@/types/app"
 
 type Step = "scanner" | "gps" | "foto" | "confirmar" | "completado"
@@ -77,27 +78,19 @@ export default function AsistenciaPage() {
       setAgenteRecordId(agente.id)
       setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
 
-      let sedeData: { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null } | null = null
+      const sedeCruda = await obtenerSedeAgente(supabaseAny, agente.id)
 
-      // Intentar obtener sede principal del agente
-      if (agente.sede_principal) {
-        const { data: sedeCruda } = await supabaseAny.from("sedes").select("*").eq("id", agente.sede_principal).maybeSingle()
-        if (sedeCruda) {
-          sedeData = { id: sedeCruda.id, nombre: sedeCruda.nombre, latitud: sedeCruda.latitud, longitud: sedeCruda.longitud, radio_gps: sedeCruda.radio_gps }
-        }
-      }
-
-      if (!sedeData) {
+      if (!sedeCruda) {
         setError("No tienes sede asignada. Contacta a un administrador.")
         setQrValido(false)
         return
       }
 
-      setSedeId(sedeData.id)
-      setSedeNombre(sedeData.nombre)
-      setSedeLat(sedeData.latitud ?? null)
-      setSedeLng(sedeData.longitud ?? null)
-      setSedeRadio(sedeData.radio_gps ?? 100)
+      setSedeId(sedeCruda.id)
+      setSedeNombre(sedeCruda.nombre)
+      setSedeLat(sedeCruda.latitud ?? null)
+      setSedeLng(sedeCruda.longitud ?? null)
+      setSedeRadio(sedeCruda.radio_gps ?? 100)
 
       setStep("gps")
     } catch {
@@ -261,7 +254,7 @@ export default function AsistenciaPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <SecureCamera
-              gpsData={gpsCoords}
+              gpsData={gpsCoords ? { lat: gpsCoords.lat, lng: gpsCoords.lng } : null}
               onCapture={(webpBlob) => {
                 // Convertir Blob a Base64 para guardarlo en IndexedDB Offline
                 const reader = new FileReader()
