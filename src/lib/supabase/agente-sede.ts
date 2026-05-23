@@ -1,9 +1,12 @@
-interface SedeData {
+export interface SedeData {
   id: string
   nombre: string
+  direccion: string | null
   latitud: number | null
   longitud: number | null
   radio_gps: number
+  tiene_almacen: boolean
+  whatsapp: string | null
 }
 
 export async function obtenerSedeAgente(
@@ -16,10 +19,12 @@ export async function obtenerSedeAgente(
     .eq("id", agenteId)
     .maybeSingle()
 
+  const cols = "id, nombre, direccion, latitud, longitud, radio_gps, tiene_almacen, whatsapp"
+
   if (agente?.sede_principal) {
     const { data: sede } = await supabase
       .from("sedes")
-      .select("id, nombre, latitud, longitud, radio_gps")
+      .select(cols)
       .eq("id", agente.sede_principal)
       .maybeSingle()
     if (sede) return sede
@@ -40,7 +45,7 @@ export async function obtenerSedeAgente(
 
   const { data: sede } = await supabase
     .from("sedes")
-    .select("id, nombre, latitud, longitud, radio_gps")
+    .select(cols)
     .eq("id", mejor.sede_id)
     .maybeSingle()
 

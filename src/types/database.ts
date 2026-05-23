@@ -50,6 +50,8 @@ export interface Database {
           codigo: string
           activo: boolean
           created_at: string
+          tiene_almacen: boolean
+          whatsapp: string | null
         }
         Insert: {
           id?: string
@@ -62,6 +64,8 @@ export interface Database {
           codigo: string
           activo?: boolean
           created_at?: string
+          tiene_almacen?: boolean
+          whatsapp?: string | null
         }
         Update: {
           id?: string
@@ -74,6 +78,8 @@ export interface Database {
           codigo?: string
           activo?: boolean
           created_at?: string
+          tiene_almacen?: boolean
+          whatsapp?: string | null
         }
       }
       puestos: {

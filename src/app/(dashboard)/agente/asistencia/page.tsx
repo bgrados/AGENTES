@@ -1,51 +1,194 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSecureGps } from "@/hooks/use-secure-gps"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { MapPin, Camera, QrCode, CheckCircle, Loader2, Satellite } from "lucide-react"
+import { MapPin, Camera, QrCode, CheckCircle, Loader2, Satellite, Send, FileText } from "lucide-react"
 import { QRScanner } from "@/components/qr/qr-scanner"
 import { SecureCamera } from "@/components/camera/secure-camera"
 import { useAttendance } from "@/hooks/use-attendance"
-import { obtenerSedeAgente } from "@/lib/supabase/agente-sede"
-import type { Coordenadas } from "@/types/app"
+import { obtenerSedeAgente, type SedeData } from "@/lib/supabase/agente-sede"
+import type { Coordenadas, EdificioEstado } from "@/types/app"
 
-type Step = "scanner" | "gps" | "foto" | "confirmar" | "completado"
+type Step = "scanner" | "gps" | "foto" | "reporte" | "confirmar" | "completado"
+
+const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"]
+
+function formatearFecha(d: Date): string {
+  return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]} ${d.getFullYear()}`
+}
+
+function obtenerSaludo(): string {
+  const h = new Date().getHours()
+  return h >= 6 && h < 19 ? "☀️ Buenos días" : "🌙 Buenas noches"
+}
+
+function turnoLabel(turno: "dia" | "noche"): string {
+  return turno === "noche" ? "Noche (19:00 – 07:00)" : "Día (07:00 – 19:00)"
+}
+
+function turnoOpuesto(turno: "dia" | "noche"): "dia" | "noche" {
+  return turno === "noche" ? "dia" : "noche"
+}
+
+function generarReporte(opts: {
+  tipo: "entrada" | "salida"
+  saludo: string
+  fecha: string
+  sedeNombre: string
+  sedeDireccion: string | null
+  agenteNombre: string
+  turno: "dia" | "noche"
+  relevoNombre: string
+  estado: EdificioEstado
+}): string {
+  const dir = opts.sedeDireccion ? ` – ${opts.sedeDireccion}` : ""
+  const [rolAgente, rolRelevo, turnoAgente, turnoRelevo] =
+    opts.tipo === "entrada"
+      ? ["ingresa", "entrega", opts.turno, turnoOpuesto(opts.turno)]
+      : ["entrega", "ingresa", opts.turno, turnoOpuesto(opts.turno)]
+
+  let estadoTexto: string
+  switch (opts.estado) {
+    case "casa_vacia":
+      estadoTexto = "🏢 Casa vacía"
+      break
+    case "personal_laborando":
+      estadoTexto = "🏢 Personal Laborando"
+      break
+    case "almacen_cerrado":
+      estadoTexto = "🏢 Personal Laborando\n🏭 Almacén cerrado"
+      break
+    case "almacen_abierto":
+      estadoTexto = "🏢 Personal Laborando\n🏭 Almacén abierto"
+      break
+  }
+
+  return [
+    `${opts.saludo}`,
+    "",
+    "⚖️ CENTRO DE CONTROL OSEDENA",
+    "Distrito Fiscal de Lima Cercado",
+    "",
+    "🛡️ Servicio de Asistencia en Seguridad",
+    "",
+    `📅 ${opts.fecha}`,
+    `📍 ${opts.sedeNombre}${dir}`,
+    "────────────",
+    "",
+    `👮‍♂️ Guardia que ${rolAgente}`,
+    `Turno ${turnoLabel(turnoAgente)}`,
+    `• ${opts.agenteNombre}`,
+    "",
+    `👮‍♂️ Guardia que ${rolRelevo}`,
+    `Turno ${turnoLabel(turnoRelevo)}`,
+    `• ${opts.relevoNombre}`,
+    "────────────",
+    "",
+    estadoTexto,
+    "",
+    "📋 Relevo realizado con normalidad.",
+    "",
+    "✅ Servicio sin novedad",
+  ].join("\n")
+}
 
 export default function AsistenciaPage() {
   const { usuario, isLoading: authLoading } = useAuthStore()
   const { supabase } = useSupabase()
-  
-  // Nuevo Hook Anti-Spoofing de GPS
-  const { location: ubicacionSegura, error: gpsError, requestLocation, validarDistancia, loading: gpsLoading } = useSecureGps()
-  
-  // Hook de Asistencia (Apunta a IndexedDB + SyncEngine)
+  const supabaseAny = supabase as any
+
+  const { requestLocation, error: gpsError, validarDistancia, loading: gpsLoading } = useSecureGps()
   const { marcar, marcando } = useAttendance()
 
   const [step, setStep] = useState<Step>("scanner")
-  const [qrValido, setQrValido] = useState(false)
-  const [codigoEscanado, setCodigoEscanado] = useState("")
-  const [sedeId, setSedeId] = useState<string>("")
-  const [sedeNombre, setSedeNombre] = useState<string>("")
-  const [gpsCoords, setGpsCoords] = useState<Coordenadas | null>(null)
-  const [gpsValidado, setGpsValidado] = useState(false)
-  
-  // Ahora manejamos datos binarios para offline
-  const [fotoData, setFotoData] = useState<string | null>(null)
-  
   const [error, setError] = useState("")
   const [escaneando, setEscaneando] = useState(false)
-  
-  const [sedeLat, setSedeLat] = useState<number | null>(null)
-  const [sedeLng, setSedeLng] = useState<number | null>(null)
-  const [sedeRadio, setSedeRadio] = useState<number>(100)
+
+  const [codigoEscanado, setCodigoEscanado] = useState("")
   const [agenteRecordId, setAgenteRecordId] = useState<string | null>(null)
   const [agenteNombre, setAgenteNombre] = useState("")
+  const [turnoAgente, setTurnoAgente] = useState<"dia" | "noche">("noche")
+
+  const [sedeData, setSedeData] = useState<SedeData | null>(null)
+  const [gpsCoords, setGpsCoords] = useState<Coordenadas | null>(null)
+  const [gpsValidado, setGpsValidado] = useState(false)
+  const [fotoData, setFotoData] = useState<string | null>(null)
+
+  const [tipo, setTipo] = useState<"entrada" | "salida">("entrada")
+  const [relevoNombre, setRelevoNombre] = useState("")
+  const [edificioEstado, setEdificioEstado] = useState<EdificioEstado>("personal_laborando")
+  const [reporteTexto, setReporteTexto] = useState("")
+
+  const buscandoRelevo = useRef(false)
+
+  const actualizarReporte = useCallback(() => {
+    if (!sedeData || !agenteNombre) return
+    setReporteTexto(generarReporte({
+      tipo,
+      saludo: obtenerSaludo(),
+      fecha: formatearFecha(new Date()),
+      sedeNombre: sedeData.nombre,
+      sedeDireccion: sedeData.direccion,
+      agenteNombre,
+      turno: turnoAgente,
+      relevoNombre: relevoNombre || "[Nombre del relevo]",
+      estado: edificioEstado,
+    }))
+  }, [tipo, sedeData, agenteNombre, turnoAgente, relevoNombre, edificioEstado])
+
+  useEffect(() => { actualizarReporte() }, [actualizarReporte])
+
+  const autoDetectarTipoYRelevo = useCallback(async (agenteId: string) => {
+    const { data: lastOwn } = await supabaseAny
+      .from("asistencia")
+      .select("tipo, created_at")
+      .eq("agente_id", agenteId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const today = new Date().toDateString()
+    const lastDate = lastOwn?.created_at ? new Date(lastOwn.created_at).toDateString() : null
+    const detected = lastOwn?.tipo === "entrada" && lastDate === today ? "salida" : "entrada"
+    setTipo(detected)
+
+    if (!sedeData) return
+    buscandoRelevo.current = true
+    const { data: lastOther } = await supabaseAny
+      .from("asistencia")
+      .select("agente_id")
+      .eq("sede_id", sedeData.id)
+      .neq("agente_id", agenteId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (lastOther?.agente_id) {
+      const { data: a } = await supabaseAny
+        .from("agentes")
+        .select("usuario_id")
+        .eq("id", lastOther.agente_id)
+        .maybeSingle()
+      if (a?.usuario_id) {
+        const { data: u } = await supabaseAny
+          .from("usuarios")
+          .select("nombre, apellido")
+          .eq("id", a.usuario_id)
+          .maybeSingle()
+        if (u) setRelevoNombre(`${u.nombre} ${u.apellido}`)
+      }
+    }
+    buscandoRelevo.current = false
+  }, [supabaseAny, sedeData])
 
   const handleScan = useCallback(async (codigo: string) => {
     setEscaneando(true)
@@ -59,32 +202,36 @@ export default function AsistenciaPage() {
       })
 
       const json = await res.json()
-
       if (!res.ok || !json.success) {
         setError(json.error || "Error al validar QR")
-        setQrValido(false)
         return
       }
 
-      setQrValido(true)
       setCodigoEscanado(codigo)
       setAgenteRecordId(json.agente.id)
       setAgenteNombre(json.agente.nombre)
 
-      const supabaseAny = supabase as any
       const sedeCruda = await obtenerSedeAgente(supabaseAny, json.agente.id)
-
       if (!sedeCruda) {
         setError("No tienes sede asignada. Contacta a un administrador.")
-        setQrValido(false)
         return
       }
 
-      setSedeId(sedeCruda.id)
-      setSedeNombre(sedeCruda.nombre)
-      setSedeLat(sedeCruda.latitud ?? null)
-      setSedeLng(sedeCruda.longitud ?? null)
-      setSedeRadio(sedeCruda.radio_gps ?? 100)
+      setSedeData(sedeCruda)
+
+      const { data: agentInfo } = await supabaseAny
+        .from("agentes")
+        .select("turno_asignado")
+        .eq("id", json.agente.id)
+        .maybeSingle()
+      const turno = (agentInfo?.turno_asignado || "noche") as "dia" | "noche"
+      setTurnoAgente(turno)
+
+      if (sedeCruda.tiene_almacen) {
+        setEdificioEstado("personal_laborando")
+      } else {
+        setEdificioEstado("personal_laborando")
+      }
 
       setStep("gps")
     } catch {
@@ -92,31 +239,29 @@ export default function AsistenciaPage() {
     } finally {
       setEscaneando(false)
     }
-  }, [supabase, usuario])
+  }, [supabase, usuario, supabaseAny])
+
+  useEffect(() => {
+    if (step === "gps" && agenteRecordId && sedeData) {
+      autoDetectarTipoYRelevo(agenteRecordId)
+    }
+  }, [step, agenteRecordId, sedeData, autoDetectarTipoYRelevo])
 
   const handleGPSValidation = useCallback(async () => {
     setError("")
-
     try {
-      const pos = await requestLocation() // Llama al GPS fresco obligatoriamente
-
-      const coords: Coordenadas = {
-        lat: pos.latitud,
-        lng: pos.longitud,
-        precision: pos.precision,
-      }
+      const pos = await requestLocation()
+      const coords: Coordenadas = { lat: pos.latitud, lng: pos.longitud, precision: pos.precision }
       setGpsCoords(coords)
 
       const errores: string[] = []
-
-      // Validación de distancia a la sede (Haversine)
-      if (sedeLat !== null && sedeLng !== null) {
-        const distancia = validarDistancia(coords.lat, coords.lng, sedeLat, sedeLng)
-        if (distancia > sedeRadio) {
-          errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeRadio}m)`)
+      if (sedeData?.latitud != null && sedeData?.longitud != null) {
+        const distancia = validarDistancia(coords.lat, coords.lng, sedeData.latitud, sedeData.longitud)
+        if (distancia > (sedeData.radio_gps || 100)) {
+          errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeData.radio_gps || 100}m)`)
         }
       } else {
-         errores.push("La sede no tiene coordenadas registradas en el sistema.")
+        errores.push("La sede no tiene coordenadas registradas en el sistema.")
       }
 
       if (errores.length > 0) {
@@ -131,28 +276,50 @@ export default function AsistenciaPage() {
       setError(err.message || "Error al validar ubicación GPS")
       setGpsValidado(false)
     }
-  }, [requestLocation, validarDistancia, sedeLat, sedeLng, sedeRadio])
+  }, [requestLocation, validarDistancia, sedeData])
 
   const handleConfirmar = useCallback(async () => {
-    if (!usuario || !gpsCoords || !agenteRecordId) return
+    if (!usuario || !gpsCoords || !agenteRecordId || !sedeData) return
+
+    const textoFinal = reporteTexto
 
     const result = await marcar({
-      tipo: "entrada",
+      tipo,
       agente_id: agenteRecordId,
-      sede_id: sedeId,
+      sede_id: sedeData.id,
       latitud: gpsCoords.lat,
       longitud: gpsCoords.lng,
       gps_precision: gpsCoords.precision,
       qr_escanado: codigoEscanado,
-      foto_data: fotoData ?? undefined, // <-- Pasar Base64/DataURL en vez de URL directa
+      foto_data: fotoData ?? undefined,
+      observaciones: textoFinal,
     })
 
-    if (result.success) {
-      setStep("completado")
-    } else {
-      setError("Error al encolar la asistencia.")
+    if (!result.success) {
+      setError("Error al registrar asistencia.")
+      return
     }
-  }, [usuario, gpsCoords, marcar, sedeId, codigoEscanado, fotoData, agenteRecordId])
+
+    setStep("completado")
+
+    try {
+      const numero = sedeData.whatsapp || "51910545980"
+      const link = `https://wa.me/${numero.replace(/\D/g, "")}?text=${encodeURIComponent(textoFinal)}`
+      window.open(link, "_blank")
+    } catch {}
+  }, [usuario, gpsCoords, agenteRecordId, sedeData, reporteTexto, marcar, tipo, codigoEscanado, fotoData])
+
+  const opcionesEdificio: { value: EdificioEstado; label: string }[] = sedeData?.tiene_almacen
+    ? [
+        { value: "personal_laborando", label: "Personal Laborando" },
+        { value: "casa_vacia", label: "Casa Vacía" },
+        { value: "almacen_cerrado", label: "Almacén Cerrado" },
+        { value: "almacen_abierto", label: "Almacén Abierto" },
+      ]
+    : [
+        { value: "personal_laborando", label: "Personal Laborando" },
+        { value: "casa_vacia", label: "Casa Vacía" },
+      ]
 
   if (authLoading) return <LoadingScreen />
 
@@ -160,24 +327,24 @@ export default function AsistenciaPage() {
     <div className="mx-auto max-w-lg space-y-6 pb-12">
       <div>
         <h1 className="text-2xl font-bold">Marcar Asistencia</h1>
-        <p className="text-muted-foreground">Sigue los pasos para registrar tu ingreso</p>
+        <p className="text-muted-foreground">Sigue los pasos para registrar tu ingreso o salida</p>
       </div>
 
-      <div className="flex items-center justify-between">
-        {["scanner", "gps", "foto", "confirmar"].map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
+      <div className="flex items-center justify-between overflow-x-auto">
+        {["scanner", "gps", "foto", "reporte", "confirmar"].map((s, i) => (
+          <div key={s} className="flex items-center gap-2 shrink-0">
             <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
               step === s ? "bg-primary text-primary-foreground" :
-              ["completado", "confirmar"].includes(step) && ["scanner", "gps", "foto"].includes(s) ? "bg-green-500 text-white" :
+              (step === "completado" || (["confirmar", "reporte"].includes(step) && ["scanner", "gps", "foto", "reporte"].includes(s) && s !== "confirmar")) ? "bg-green-500 text-white" :
               "bg-muted text-muted-foreground"
             }`}>
-              {["completado", "confirmar"].includes(step) && ["scanner", "gps", "foto"].includes(s) ? (
+              {step === "completado" && ["scanner", "gps", "foto", "reporte", "confirmar"].includes(s) ? (
                 <CheckCircle className="h-5 w-5" />
               ) : (
                 i + 1
               )}
             </div>
-            {i < 3 && <div className="h-px w-8 bg-border" />}
+            {i < 4 && <div className="h-px w-6 bg-border hidden sm:block" />}
           </div>
         ))}
       </div>
@@ -214,19 +381,17 @@ export default function AsistenciaPage() {
               Validar Ubicación
             </CardTitle>
             <CardDescription>
-              {sedeNombre} — {agenteNombre}
+              {sedeData?.nombre} — {agenteNombre}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
-               <p>Debes estar físicamente en la sede (Radio permitido: {sedeRadio}m).</p>
+               <p>Debes estar físicamente en la sede (Radio permitido: {sedeData?.radio_gps || 100}m).</p>
                <p>Asegúrate de tener buena señal GPS (a cielo abierto o cerca de ventana).</p>
             </div>
-            
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
             )}
-            
             <Button className="w-full" size="lg" onClick={handleGPSValidation} disabled={gpsLoading}>
               {gpsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Satellite className="mr-2 h-4 w-4" />}
               {gpsLoading ? "Obteniendo precisión militar..." : "Validar mi posición GPS"}
@@ -243,23 +408,97 @@ export default function AsistenciaPage() {
               Foto de Evidencia
             </CardTitle>
             <CardDescription>
-              Toma una foto para registrar tu asistencia (Se añadirá marca de agua automática)
+              Toma una foto para registrar tu asistencia
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <SecureCamera
               gpsData={gpsCoords ? { lat: gpsCoords.lat, lng: gpsCoords.lng } : null}
               onCapture={(webpBlob) => {
-                // Convertir Blob a Base64 para guardarlo en IndexedDB Offline
                 const reader = new FileReader()
                 reader.readAsDataURL(webpBlob)
-                reader.onloadend = () => {
-                  setFotoData(reader.result as string)
-                }
+                reader.onloadend = () => setFotoData(reader.result as string)
               }}
             />
-            
-            <Button className="w-full" onClick={() => setStep("confirmar")} disabled={!fotoData}>
+            <Button className="w-full" onClick={() => setStep("reporte")} disabled={!fotoData}>
+              Continuar a Reporte
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {step === "reporte" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Reporte de {tipo === "entrada" ? "Ingreso" : "Salida"}
+            </CardTitle>
+            <CardDescription>
+              Completa los datos y edita el texto del reporte si es necesario
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {error && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Tipo de marcación</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant={tipo === "entrada" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setTipo("entrada")}
+                >
+                  Entrada
+                </Button>
+                <Button
+                  variant={tipo === "salida" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setTipo("salida")}
+                >
+                  Salida
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="relevo">Guardia que {tipo === "entrada" ? "entrega" : "ingresa"} (relevo)</Label>
+              <Input
+                id="relevo"
+                placeholder="Nombre del relevo"
+                value={relevoNombre}
+                onChange={(e) => setRelevoNombre(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Estado de la sede</Label>
+              <div className="flex flex-wrap gap-2">
+                {opcionesEdificio.map((op) => (
+                  <Button
+                    key={op.value}
+                    variant={edificioEstado === op.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setEdificioEstado(op.value)}
+                  >
+                    {op.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Texto del reporte (editable)</Label>
+              <textarea
+                className="w-full min-h-[280px] rounded-md border bg-muted p-3 text-xs font-mono resize-y"
+                value={reporteTexto}
+                onChange={(e) => setReporteTexto(e.target.value)}
+              />
+            </div>
+
+            <Button className="w-full" onClick={() => setStep("confirmar")}>
               Continuar a Confirmación
             </Button>
           </CardContent>
@@ -270,7 +509,7 @@ export default function AsistenciaPage() {
         <Card>
           <CardHeader>
             <CardTitle>Confirmar Asistencia</CardTitle>
-            <CardDescription>Verifica los datos antes de confirmar (Soporta Modo Offline)</CardDescription>
+            <CardDescription>Verifica los datos antes de confirmar</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2 rounded-lg bg-muted p-3 text-sm">
@@ -284,11 +523,17 @@ export default function AsistenciaPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sede:</span>
-                <span className="font-medium">{sedeNombre}</span>
+                <span className="font-medium">{sedeData?.nombre}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tipo:</span>
-                <span className="font-medium text-blue-600">Entrada</span>
+                <span className={`font-medium ${tipo === "entrada" ? "text-blue-600" : "text-orange-600"}`}>
+                  {tipo === "entrada" ? "Entrada" : "Salida"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Relevo:</span>
+                <span className="font-medium">{relevoNombre || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Precisión GPS:</span>
@@ -303,13 +548,27 @@ export default function AsistenciaPage() {
                 </Badge>
               </div>
             </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">TEXTO DEL REPORTE</p>
+              <div className="whitespace-pre-wrap rounded-md border bg-card p-3 text-xs text-card-foreground">
+                {reporteTexto}
+              </div>
+            </div>
+
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
             )}
-            <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={marcando}>
-              {marcando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Confirmar Asistencia Segura
-            </Button>
+
+            <div className="flex flex-col gap-2">
+              <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={marcando}>
+                {marcando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Confirmar y enviar a WhatsApp
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setStep("reporte")}>
+                Volver a editar reporte
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -320,15 +579,21 @@ export default function AsistenciaPage() {
             <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
             <CardTitle className="text-2xl">Asistencia Registrada</CardTitle>
             <CardDescription className="text-lg">
-              {sedeNombre} <br/> 
+              {sedeData?.nombre} <br/> 
               <span className="font-semibold text-foreground">{new Date().toLocaleTimeString("es-PE")}</span>
             </CardDescription>
           </CardHeader>
-          <CardContent className="text-center">
-             <p className="text-sm text-muted-foreground">Tu registro se sincronizará automáticamente en segundo plano cuando tengas conexión estable.</p>
-             <Button variant="outline" className="mt-6" onClick={() => window.location.href = "/agente/historial"}>
-               Ver mi historial
-             </Button>
+          <CardContent className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              {tipo === "entrada" ? "Ingreso" : "Salida"} registrado correctamente.
+              El reporte se ha enviado a WhatsApp.
+            </p>
+            <Button variant="outline" onClick={() => window.location.href = "/agente/historial"}>
+              Ver mi historial
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
+              Nueva marcación
+            </Button>
           </CardContent>
         </Card>
       )}

@@ -4,6 +4,8 @@ export type Turno = "dia" | "noche"
 
 export type TipoAsistencia = "entrada" | "salida" | "relevo_entrada" | "relevo_salida"
 
+export type EdificioEstado = "casa_vacia" | "personal_laborando" | "almacen_cerrado" | "almacen_abierto"
+
 export type TipoReporte = "con_foto" | "sin_foto"
 
 export type TipoIncidencia = "tardanza" | "falta" | "gps_invalido" | "qr_invalido" | "reporte_faltante" | "cobertura" | "otro"
