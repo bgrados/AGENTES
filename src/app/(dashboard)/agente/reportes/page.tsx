@@ -3,14 +3,18 @@
 import { useEffect, useState } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
+import { useSecureGps } from "@/hooks/use-secure-gps"
+import { syncEngine } from "@/lib/offline/sync-engine"
+import { generateWhatsAppLink } from "@/lib/whatsapp/generate-link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { Camera, Send, MapPin, Clock, FileText, Sun, Moon } from "lucide-react"
+import { Camera, Send, MapPin, Clock, FileText, Sun, Moon, Loader2 } from "lucide-react"
 import { REPORTES_DIA, REPORTES_NOCHE } from "@/lib/constants"
-import { PhotoCapture } from "@/components/camera/photo-capture"
+import { SecureCamera } from "@/components/camera/secure-camera"
+import type { ReportePayload } from "@/types/app"
 
 interface GrupoReporte {
   id: string
@@ -26,22 +30,55 @@ interface GrupoReporte {
 export default function ReportesPage() {
   const { usuario, isLoading } = useAuthStore()
   const { supabase } = useSupabase()
+  
+  // Motores Core
+  const { requestLocation, location: gpsCoords, loading: gpsLoading } = useSecureGps()
+
   const [novedades, setNovedades] = useState("")
   const [horaSeleccionada, setHoraSeleccionada] = useState("")
-  const [fotoUrl, setFotoUrl] = useState<string | null>(null)
+  const [fotoData, setFotoData] = useState<string | null>(null)
   const [turno, setTurno] = useState<"dia" | "noche">("noche")
   const [cargandoTurno, setCargandoTurno] = useState(true)
+  const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
-
+  const [error, setError] = useState("")
+  
+  // Metadata agente
+  const [sedeId, setSedeId] = useState<string>("")
+  const [sedeNombre, setSedeNombre] = useState<string>("")
+  const [agenteId, setAgenteId] = useState<string>("")
+  const [agenteNombre, setAgenteNombre] = useState<string>("")
+  const [supervisorTelefono, setSupervisorTelefono] = useState<string>("+51999999999") // Fallback
+  
   useEffect(() => {
     if (!usuario) return
     ;(async () => {
       const supabaseAny = supabase as any
-      const { data: agente } = await supabaseAny.from("agentes").select("turno_asignado").eq("usuario_id", usuario.id).maybeSingle()
-      if (agente?.turno_asignado) setTurno(agente.turno_asignado)
+      // Obtener agente
+      const { data: agente } = await supabaseAny
+        .from("agentes")
+        .select("id, turno_asignado, sede_principal, usuarios(nombre, apellido)")
+        .eq("usuario_id", usuario.id)
+        .maybeSingle()
+        
+      if (agente) {
+        setAgenteId(agente.id)
+        if (agente.turno_asignado) setTurno(agente.turno_asignado)
+        if (agente.usuarios) setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
+        
+        // Obtener sede
+        if (agente.sede_principal) {
+          const { data: sede } = await supabaseAny.from("sedes").select("id, nombre, supervisor_telefono").eq("id", agente.sede_principal).maybeSingle()
+          if (sede) {
+            setSedeId(sede.id)
+            setSedeNombre(sede.nombre)
+            if (sede.supervisor_telefono) setSupervisorTelefono(sede.supervisor_telefono)
+          }
+        }
+      }
       setCargandoTurno(false)
     })()
-  }, [usuario])
+  }, [usuario, supabase])
 
   if (isLoading || cargandoTurno) return <LoadingScreen />
 
@@ -67,23 +104,70 @@ export default function ReportesPage() {
   const configActual = horaSeleccionada ? REPORTES[horaSeleccionada] : null
   const grupoActual = configActual ? grupos.find(g => g.horas.includes(horaSeleccionada)) : null
 
-  function handleSubmit() {
-    setEnviado(true)
-    setTimeout(() => setEnviado(false), 3000)
-  }
-
   function handleSeleccionar(hora: string) {
     setHoraSeleccionada(hora)
-    setFotoUrl(null)
+    setFotoData(null)
     setNovedades("")
     setEnviado(false)
+    setError("")
+  }
+
+  async function handleSubmit() {
+    setEnviando(true)
+    setError("")
+
+    try {
+      if (grupoActual?.requiere_foto && !fotoData) {
+        throw new Error("La foto de evidencia es obligatoria para este reporte.")
+      }
+
+      // 1. Validar GPS Estricto (Anti-Spoofing)
+      let pos = gpsCoords
+      if (!pos) {
+         pos = await requestLocation()
+      }
+      
+      const payload: ReportePayload = {
+        agente_id: agenteId,
+        sede_id: sedeId,
+        turno: turno,
+        hora_programada: horaSeleccionada,
+        tipo_reporte: grupoActual?.requiere_foto ? "con_foto" : "sin_foto",
+        latitud: pos.latitud,
+        longitud: pos.longitud,
+        foto_data: fotoData ?? undefined,
+        novedades: novedades || "Sin novedades relevantes.",
+      }
+
+      // 2. Encolar Offline
+      await syncEngine.queueOperation("reportes", "INSERT", payload)
+      syncEngine.syncAll().catch(console.error)
+
+      // 3. Generar MVP Link WhatsApp y abrirlo
+      const wpLink = generateWhatsAppLink(supervisorTelefono, {
+        agenteNombre,
+        sedeNombre,
+        turno,
+        hora: horaSeleccionada,
+        tipoReporte: payload.tipo_reporte,
+        novedades: payload.novedades!,
+      })
+      
+      setEnviado(true)
+      window.open(wpLink, '_blank')
+      
+    } catch (err: any) {
+      setError(err.message || "Error al procesar el reporte.")
+    } finally {
+      setEnviando(false)
+    }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       <div>
         <h1 className="text-2xl font-bold">Reportes Operativos</h1>
-        <p className="text-muted-foreground">Selecciona un horario para registrar tu reporte</p>
+        <p className="text-muted-foreground">Selecciona un horario para registrar tu reporte offline</p>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -133,7 +217,7 @@ export default function ReportesPage() {
             </CardTitle>
             {configActual && (
               <p className="text-sm text-muted-foreground">
-                {horaSeleccionada} — {turno === "dia" ? "Turno Día" : "Turno Noche"}
+                {horaSeleccionada} — {turno === "dia" ? "Turno Día" : "Turno Noche"} en {sedeNombre}
               </p>
             )}
           </CardHeader>
@@ -147,12 +231,15 @@ export default function ReportesPage() {
               <>
                 {grupoActual?.requiere_foto && (
                   <div>
-                    <Label>Foto de Evidencia</Label>
+                    <Label>Foto de Evidencia (Marca de Agua Obligatoria)</Label>
                     <div className="mt-1">
-                      <PhotoCapture
-                        onPhoto={(url) => setFotoUrl(url)}
-                        onClear={() => setFotoUrl(null)}
-                        fotoUrl={fotoUrl}
+                      <SecureCamera
+                        gpsData={gpsCoords}
+                        onCapture={(webpBlob) => {
+                          const reader = new FileReader()
+                          reader.readAsDataURL(webpBlob)
+                          reader.onloadend = () => setFotoData(reader.result as string)
+                        }}
                       />
                     </div>
                   </div>
@@ -178,17 +265,27 @@ export default function ReportesPage() {
                   </div>
                 )}
 
+                {error && (
+                  <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+                )}
+
                 <div className="flex items-center justify-between rounded-lg bg-muted p-2 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3" /> GPS activo
+                    <MapPin className="h-3 w-3" /> GPS Seguro
                   </span>
                   <span className="flex items-center gap-1">
-                    <Send className="h-3 w-3" /> WhatsApp
+                    <Send className="h-3 w-3" /> WhatsApp Auto
                   </span>
                 </div>
 
-                <Button className="w-full" onClick={handleSubmit} disabled={enviado}>
-                  {enviado ? "Reporte Enviado" : "Enviar Reporte"}
+                <Button className="w-full" size="lg" onClick={handleSubmit} disabled={enviando || enviado}>
+                  {enviando ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando Reporte...</>
+                  ) : enviado ? (
+                    "Reporte Guardado Offline"
+                  ) : (
+                    "Enviar Reporte y Abrir WhatsApp"
+                  )}
                 </Button>
               </>
             )}
@@ -198,7 +295,7 @@ export default function ReportesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Reportes del Día</CardTitle>
+          <CardTitle>Historial Local del Turno</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
@@ -228,9 +325,8 @@ export default function ReportesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={config.requiere_foto ? "default" : "secondary"}>
-                      {config.requiere_foto ? "Con Foto" : "Sin Foto"}
+                      {config.requiere_foto ? "Evidencia Física" : "Solo Texto"}
                     </Badge>
-                    <Badge variant="outline">Pendiente</Badge>
                   </div>
                 </div>
               ))
