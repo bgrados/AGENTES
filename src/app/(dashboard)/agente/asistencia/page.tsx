@@ -56,7 +56,7 @@ export default function AsistenciaPage() {
 
       const { data: agente, error: err } = await supabaseAny
         .from("agentes")
-        .select("id, codigo, usuario_id, usuarios!inner(nombre, apellido), sede_principal")
+        .select("id, codigo, usuario_id, sede_principal")
         .eq("codigo", codigo)
         .eq("activo", true)
         .maybeSingle()
@@ -76,7 +76,7 @@ export default function AsistenciaPage() {
       setQrValido(true)
       setCodigoEscanado(codigo)
       setAgenteRecordId(agente.id)
-      setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
+      setAgenteNombre(`${usuario?.nombre || ""} ${usuario?.apellido || ""}`)
 
       const sedeCruda = await obtenerSedeAgente(supabaseAny, agente.id)
 
