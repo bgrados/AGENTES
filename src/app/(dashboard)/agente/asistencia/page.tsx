@@ -52,33 +52,32 @@ export default function AsistenciaPage() {
     setError("")
 
     try {
-      const supabaseAny = supabase as any
+      const res = await fetch("/api/validate-qr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigo, usuario_id: usuario?.id }),
+      })
 
-      const { data: agente, error: err } = await supabaseAny
-        .from("agentes")
-        .select("id, codigo, usuario_id, sede_principal")
-        .eq("codigo", codigo)
-        .eq("activo", true)
-        .maybeSingle()
+      const json = await res.json()
 
-      if (err || !agente) {
-        setError("QR inválido: agente no encontrado")
-        setQrValido(false)
-        return
-      }
-
-      if (agente.usuario_id !== usuario?.id) {
-        setError("Este código QR no corresponde a tu usuario")
+      if (!res.ok || !json.success) {
+        const msg = json.error === "agente no encontrado"
+          ? "QR inválido: agente no encontrado"
+          : json.error === "QR no corresponde al usuario"
+          ? "Este código QR no corresponde a tu usuario"
+          : json.error || "Error al validar QR"
+        setError(msg)
         setQrValido(false)
         return
       }
 
       setQrValido(true)
       setCodigoEscanado(codigo)
-      setAgenteRecordId(agente.id)
-      setAgenteNombre(`${usuario?.nombre || ""} ${usuario?.apellido || ""}`)
+      setAgenteRecordId(json.agente.id)
+      setAgenteNombre(json.agente.nombre)
 
-      const sedeCruda = await obtenerSedeAgente(supabaseAny, agente.id)
+      const supabaseAny = supabase as any
+      const sedeCruda = await obtenerSedeAgente(supabaseAny, json.agente.id)
 
       if (!sedeCruda) {
         setError("No tienes sede asignada. Contacta a un administrador.")
