@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useCallback } from "react"
+import { useEffect, useRef, useCallback } from "react"
 import { useGPSStore } from "@/stores/gps-store"
 import { GPS_CONFIG } from "@/lib/constants"
 
 export function useGPS() {
   const { ubicacionActual, tracking, gpsActivo, setUbicacionActual, setTracking, setGpsActivo } = useGPSStore()
+  const checkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const iniciarTracking = useCallback(() => {
     if (!navigator.geolocation) return
@@ -38,17 +39,17 @@ export function useGPS() {
   }, [setUbicacionActual, setTracking, setGpsActivo])
 
   const obtenerPosicion = useCallback((): Promise<GeolocationPosition> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        resolve({ coords: { latitude: 0, longitude: 0, accuracy: 9999 } } as GeolocationPosition)
+        reject(new Error("Geolocalización no disponible"))
         return
       }
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve(pos),
-        () => {
+        (_err) => {
           navigator.geolocation.getCurrentPosition(
             (pos) => resolve(pos),
-            () => resolve({ coords: { latitude: 0, longitude: 0, accuracy: 9999 } } as GeolocationPosition),
+            () => reject(new Error("No se pudo obtener la ubicación")),
             { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 },
           )
         },
@@ -73,14 +74,19 @@ export function useGPS() {
 
   useEffect(() => {
     if (!navigator.geolocation) return
-    const check = setInterval(() => {
+    checkIntervalRef.current = setInterval(() => {
       navigator.geolocation.getCurrentPosition(
         () => setGpsActivo(true),
         () => setGpsActivo(false),
         { timeout: 5000 },
       )
     }, 30000)
-    return () => clearInterval(check)
+    return () => {
+      if (checkIntervalRef.current) {
+        clearInterval(checkIntervalRef.current)
+        checkIntervalRef.current = null
+      }
+    }
   }, [setGpsActivo])
 
   return {

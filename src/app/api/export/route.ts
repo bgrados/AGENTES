@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 
+const TABLAS_PERMITIDAS = [
+  "asistencia",
+  "reportes",
+  "incidencias",
+  "historial_ubicaciones",
+  "relevos",
+  "programacion_personal",
+] as const
+
+type TablaPermitida = (typeof TABLAS_PERMITIDAS)[number]
+
 export async function GET(request: Request) {
   try {
     const supabase = await createServerSupabaseClient()
@@ -11,6 +22,11 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const tipo = searchParams.get("tipo") || "asistencia"
+
+    if (!TABLAS_PERMITIDAS.includes(tipo as TablaPermitida)) {
+      return NextResponse.json({ error: "Tabla no permitida" }, { status: 403 })
+    }
+
     const desde = searchParams.get("desde")
     const hasta = searchParams.get("hasta")
     const sede_id = searchParams.get("sede_id")

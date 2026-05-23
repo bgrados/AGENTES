@@ -6,11 +6,11 @@ import { useSupabase } from "@/providers/supabase-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { Camera, Send, MapPin, Clock, Image, FileText, Sun, Moon } from "lucide-react"
+import { Camera, Send, MapPin, Clock, FileText, Sun, Moon } from "lucide-react"
 import { REPORTES_DIA, REPORTES_NOCHE } from "@/lib/constants"
+import { PhotoCapture } from "@/components/camera/photo-capture"
 
 interface GrupoReporte {
   id: string
@@ -148,26 +148,12 @@ export default function ReportesPage() {
                 {grupoActual?.requiere_foto && (
                   <div>
                     <Label>Foto de Evidencia</Label>
-                    <div className="mt-1 flex aspect-video items-center justify-center rounded-lg border-2 border-dashed bg-muted/50">
-                      {fotoUrl ? (
-                        <img src={fotoUrl} alt="Evidencia" className="h-full w-full object-cover rounded-lg" />
-                      ) : (
-                        <div className="text-center">
-                          <Camera className="mx-auto h-10 w-10 text-muted-foreground/50" />
-                          <p className="mt-1 text-xs text-muted-foreground">Toca para tomar o seleccionar foto</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2 mt-2">
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => setFotoUrl("/placeholder.jpg")}>
-                        <Camera className="mr-1 h-4 w-4" /> Cámara
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex-1" onClick={() => setFotoUrl("/placeholder.jpg")}>
-                        <Image className="mr-1 h-4 w-4" /> Galería
-                      </Button>
-                      {fotoUrl && (
-                        <Button variant="ghost" size="sm" onClick={() => setFotoUrl(null)}>Quitar</Button>
-                      )}
+                    <div className="mt-1">
+                      <PhotoCapture
+                        onPhoto={(url) => setFotoUrl(url)}
+                        onClear={() => setFotoUrl(null)}
+                        fotoUrl={fotoUrl}
+                      />
                     </div>
                   </div>
                 )}
@@ -175,12 +161,12 @@ export default function ReportesPage() {
                 {grupoActual?.requiere_novedades && (
                   <div className="space-y-2">
                     <Label htmlFor="novedades">Novedades Operativas</Label>
-                    <Input
+                    <textarea
                       id="novedades"
                       placeholder="Describe las novedades operativas..."
                       value={novedades}
                       onChange={(e) => setNovedades(e.target.value)}
-                      className="min-h-[80px]"
+                      className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     />
                   </div>
                 )}

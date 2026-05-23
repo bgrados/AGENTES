@@ -237,6 +237,7 @@ export interface Database {
           agente_id: string
           sede_id: string
           tipo: string
+          es_jefe_grupo: boolean
           activo: boolean
           created_at: string
         }
@@ -245,6 +246,7 @@ export interface Database {
           agente_id: string
           sede_id: string
           tipo: string
+          es_jefe_grupo?: boolean
           activo?: boolean
           created_at?: string
         }
@@ -253,7 +255,63 @@ export interface Database {
           agente_id?: string
           sede_id?: string
           tipo?: string
+          es_jefe_grupo?: boolean
           activo?: boolean
+          created_at?: string
+        }
+      }
+      jefes_grupo: {
+        Row: {
+          id: string
+          usuario_id: string
+          sede_id: string
+          turno: "dia" | "noche"
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          usuario_id: string
+          sede_id: string
+          turno: "dia" | "noche"
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          usuario_id?: string
+          sede_id?: string
+          turno?: "dia" | "noche"
+          created_at?: string
+        }
+      }
+      log_notificaciones: {
+        Row: {
+          id: string
+          usuario_id: string
+          titulo: string
+          mensaje: string | null
+          tipo: string | null
+          leida: boolean
+          leida_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          usuario_id: string
+          titulo: string
+          mensaje?: string | null
+          tipo?: string | null
+          leida?: boolean
+          leida_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          usuario_id?: string
+          titulo?: string
+          mensaje?: string | null
+          tipo?: string | null
+          leida?: boolean
+          leida_at?: string | null
           created_at?: string
         }
       }

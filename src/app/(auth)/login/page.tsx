@@ -95,6 +95,9 @@ export default function LoginPage() {
               "Ingresar"
             )}
           </Button>
+          <div className="mt-2 text-center">
+            <a href="/recuperar" className="text-sm text-primary hover:underline">¿Olvidaste tu contraseña?</a>
+          </div>
         </form>
       </CardContent>
     </Card>

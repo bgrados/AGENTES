@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useOffline } from "@/hooks/use-offline"
@@ -21,14 +21,11 @@ export default function AgenteDashboard() {
   const [stats, setStats] = useState({ marcacionHoy: false, reportesHoy: 0, totalReportes: 13, turno: "dia" as const, sede: "", puesto: "" })
   const [cargando, setCargando] = useState(true)
 
-  useEffect(() => {
-    if (usuario) cargarDatos()
-  }, [usuario])
-
-  async function cargarDatos() {
+  const cargarDatos = useCallback(async () => {
+    if (!usuario) return
     const supabaseAny = supabase as any
 
-    const { data: agente } = await supabaseAny.from("agentes").select("*, sedes!sede_principal(nombre)").eq("usuario_id", usuario!.id).maybeSingle()
+    const { data: agente } = await supabaseAny.from("agentes").select("*, sedes!sede_principal(nombre)").eq("usuario_id", usuario.id).maybeSingle()
     if (!agente || !agente.id) { setCargando(false); return }
 
     setAgenteId(agente.id)
@@ -51,7 +48,11 @@ export default function AgenteDashboard() {
       puesto: "-",
     })
     setCargando(false)
-  }
+  }, [supabase, usuario])
+
+  useEffect(() => {
+    if (usuario) cargarDatos()
+  }, [usuario, cargarDatos])
 
   if (isLoading || cargando) return <LoadingScreen />
 

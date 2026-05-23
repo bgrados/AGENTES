@@ -49,6 +49,7 @@ export interface MarcarAsistenciaPayload {
   gps_precision?: number
   qr_escanado?: string
   foto_url?: string
+  foto_data?: string
   observaciones?: string
 }
 
@@ -60,6 +61,7 @@ export interface ReportePayload {
   hora_programada: string
   tipo_reporte: TipoReporte
   foto_url?: string
+  foto_data?: string
   latitud?: number
   longitud?: number
   novedades?: string
@@ -74,6 +76,7 @@ export interface RelevoPayload {
   turno_saliente?: Turno
   turno_entrante: Turno
   foto_conjunta_url?: string
+  foto_data?: string
   latitud?: number
   longitud?: number
   observaciones?: string

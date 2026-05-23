@@ -3,16 +3,15 @@
 import { useState, useCallback, useEffect } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useAuthStore } from "@/stores/auth-store"
-import { useGPS } from "@/hooks/use-gps"
+import { useSecureGps } from "@/hooks/use-secure-gps"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { LoadingScreen } from "@/components/shared/loading-screen"
 import { MapPin, Camera, QrCode, CheckCircle, Loader2, Satellite } from "lucide-react"
 import { QRScanner } from "@/components/qr/qr-scanner"
-import { PhotoCapture } from "@/components/camera/photo-capture"
+import { SecureCamera } from "@/components/camera/secure-camera"
 import { useAttendance } from "@/hooks/use-attendance"
-import { GPS_CONFIG } from "@/lib/constants"
 import type { Coordenadas } from "@/types/app"
 
 type Step = "scanner" | "gps" | "foto" | "confirmar" | "completado"
@@ -20,7 +19,11 @@ type Step = "scanner" | "gps" | "foto" | "confirmar" | "completado"
 export default function AsistenciaPage() {
   const { usuario, isLoading: authLoading } = useAuthStore()
   const { supabase } = useSupabase()
-  const { gpsActivo, ubicacionActual, validarDistancia, iniciarTracking } = useGPS()
+  
+  // Nuevo Hook Anti-Spoofing de GPS
+  const { location: ubicacionSegura, error: gpsError, requestLocation, validarDistancia, loading: gpsLoading } = useSecureGps()
+  
+  // Hook de Asistencia (Apunta a IndexedDB + SyncEngine)
   const { marcar, marcando } = useAttendance()
 
   const [step, setStep] = useState<Step>("scanner")
@@ -30,19 +33,18 @@ export default function AsistenciaPage() {
   const [sedeNombre, setSedeNombre] = useState<string>("")
   const [gpsCoords, setGpsCoords] = useState<Coordenadas | null>(null)
   const [gpsValidado, setGpsValidado] = useState(false)
-  const [fotoUrl, setFotoUrl] = useState<string | null>(null)
+  
+  // Ahora manejamos datos binarios para offline
+  const [fotoData, setFotoData] = useState<string | null>(null)
+  
   const [error, setError] = useState("")
   const [escaneando, setEscaneando] = useState(false)
-  const [validandoGPS, setValidandoGPS] = useState(false)
+  
   const [sedeLat, setSedeLat] = useState<number | null>(null)
   const [sedeLng, setSedeLng] = useState<number | null>(null)
   const [sedeRadio, setSedeRadio] = useState<number>(100)
   const [agenteRecordId, setAgenteRecordId] = useState<string | null>(null)
   const [agenteNombre, setAgenteNombre] = useState("")
-
-  useEffect(() => {
-    iniciarTracking()
-  }, [iniciarTracking])
 
   const handleScan = useCallback(async (codigo: string) => {
     setEscaneando(true)
@@ -53,7 +55,7 @@ export default function AsistenciaPage() {
 
       const { data: agente, error: err } = await supabaseAny
         .from("agentes")
-        .select("id, codigo, usuario_id, usuarios!inner(nombre, apellido)")
+        .select("id, codigo, usuario_id, usuarios!inner(nombre, apellido), sede_principal")
         .eq("codigo", codigo)
         .eq("activo", true)
         .maybeSingle()
@@ -76,39 +78,17 @@ export default function AsistenciaPage() {
       setAgenteNombre(`${agente.usuarios.nombre} ${agente.usuarios.apellido}`)
 
       let sedeData: { id: string; nombre: string; latitud: number | null; longitud: number | null; radio_gps: number | null } | null = null
-      let debugInfo = ""
 
-      // Intento 1: agentes_sedes activo (cualquier tipo)
-      const { data: s1 } = await supabaseAny
-        .from("agentes_sedes")
-        .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
-        .eq("agente_id", agente.id)
-        .eq("activo", true)
-        .maybeSingle()
-      if (s1?.sedes) { sedeData = s1.sedes as any; debugInfo = "desde agentes_sedes activo" }
-
-      // Intento 2: agentes_sedes sin filtro activo
-      if (!sedeData) {
-        const { data: s2 } = await supabaseAny
-          .from("agentes_sedes")
-          .select("sede_id, sedes!inner(id, nombre, latitud, longitud, radio_gps)")
-          .eq("agente_id", agente.id)
-          .maybeSingle()
-        if (s2?.sedes) { sedeData = s2.sedes as any; debugInfo = "desde agentes_sedes cualquier" }
-      }
-
-      // Intento 3: sede_principal en agentes
-      if (!sedeData) {
-        const { data: s3 } = await supabaseAny
-          .from("agentes")
-          .select("sede_principal, sedes!sede_principal(id, nombre, latitud, longitud, radio_gps)")
-          .eq("id", agente.id)
-          .maybeSingle()
-        if (s3?.sedes) { sedeData = s3.sedes as any; debugInfo = "desde agentes.sede_principal" }
+      // Intentar obtener sede principal del agente
+      if (agente.sede_principal) {
+        const { data: sedeCruda } = await supabaseAny.from("sedes").select("*").eq("id", agente.sede_principal).maybeSingle()
+        if (sedeCruda) {
+          sedeData = { id: sedeCruda.id, nombre: sedeCruda.nombre, latitud: sedeCruda.latitud, longitud: sedeCruda.longitud, radio_gps: sedeCruda.radio_gps }
+        }
       }
 
       if (!sedeData) {
-        setError("No tienes una sede asignada. Contacta a tu supervisor. (debug: agente_id=" + agente.id + ")")
+        setError("No tienes sede asignada. Contacta a un administrador.")
         setQrValido(false)
         return
       }
@@ -128,51 +108,43 @@ export default function AsistenciaPage() {
   }, [supabase, usuario])
 
   const handleGPSValidation = useCallback(async () => {
-    setValidandoGPS(true)
     setError("")
 
-    const pos = ubicacionActual
-    if (!pos) {
-      setError("Esperando señal GPS...")
-      setValidandoGPS(false)
-      return
-    }
+    try {
+      const pos = await requestLocation() // Llama al GPS fresco obligatoriamente
 
-    const coords: Coordenadas = {
-      lat: pos.lat,
-      lng: pos.lng,
-      precision: pos.precision,
-    }
-    setGpsCoords(coords)
-
-    const errores: string[] = []
-
-    if (pos.precision > GPS_CONFIG.PRECISION_MINIMA) {
-      errores.push(`Precisión GPS baja: ${Math.round(pos.precision)}m`)
-    }
-
-    if (sedeLat !== null && sedeLng !== null) {
-      const distancia = validarDistancia(coords.lat, coords.lng, sedeLat, sedeLng)
-      if (distancia > sedeRadio) {
-        errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeRadio}m)`)
+      const coords: Coordenadas = {
+        lat: pos.latitud,
+        lng: pos.longitud,
+        precision: pos.precision,
       }
-    }
+      setGpsCoords(coords)
 
-    if (errores.length > 0) {
-      setError(errores.join(". "))
+      const errores: string[] = []
+
+      // Validación de distancia a la sede (Haversine)
+      if (sedeLat !== null && sedeLng !== null) {
+        const distancia = validarDistancia(coords.lat, coords.lng, sedeLat, sedeLng)
+        if (distancia > sedeRadio) {
+          errores.push(`Estás a ${Math.round(distancia)}m de la sede (máx ${sedeRadio}m)`)
+        }
+      } else {
+         errores.push("La sede no tiene coordenadas registradas en el sistema.")
+      }
+
+      if (errores.length > 0) {
+        setError(errores.join(". "))
+        setGpsValidado(false)
+        return
+      }
+
+      setGpsValidado(true)
+      setStep("foto")
+    } catch (err: any) {
+      setError(err.message || "Error al validar ubicación GPS")
       setGpsValidado(false)
-      setValidandoGPS(false)
-      return
     }
-
-    setGpsValidado(true)
-    setStep("foto")
-    setValidandoGPS(false)
-  }, [ubicacionActual, validarDistancia, sedeLat, sedeLng, sedeRadio])
-
-  const handleFoto = useCallback(async () => {
-    setStep("confirmar")
-  }, [])
+  }, [requestLocation, validarDistancia, sedeLat, sedeLng, sedeRadio])
 
   const handleConfirmar = useCallback(async () => {
     if (!usuario || !gpsCoords || !agenteRecordId) return
@@ -185,36 +157,20 @@ export default function AsistenciaPage() {
       longitud: gpsCoords.lng,
       gps_precision: gpsCoords.precision,
       qr_escanado: codigoEscanado,
-      foto_url: fotoUrl ?? undefined,
+      foto_data: fotoData ?? undefined, // <-- Pasar Base64/DataURL en vez de URL directa
     })
 
     if (result.success) {
       setStep("completado")
     } else {
-      setError("Error al registrar asistencia")
+      setError("Error al encolar la asistencia.")
     }
-  }, [usuario, gpsCoords, marcar, sedeId, codigoEscanado, fotoUrl, agenteRecordId])
+  }, [usuario, gpsCoords, marcar, sedeId, codigoEscanado, fotoData, agenteRecordId])
 
   if (authLoading) return <LoadingScreen />
 
-  if (!gpsActivo) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <MapPin className="mx-auto h-12 w-12 text-destructive" />
-            <CardTitle>GPS Requerido</CardTitle>
-            <CardDescription>
-              Activa la ubicación GPS para poder marcar asistencia
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    )
-  }
-
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-lg space-y-6 pb-12">
       <div>
         <h1 className="text-2xl font-bold">Marcar Asistencia</h1>
         <p className="text-muted-foreground">Sigue los pasos para registrar tu ingreso</p>
@@ -225,10 +181,10 @@ export default function AsistenciaPage() {
           <div key={s} className="flex items-center gap-2">
             <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
               step === s ? "bg-primary text-primary-foreground" :
-              ["completado", "confirmar"].includes(step) && ["scanner", "gps"].includes(s) ? "bg-green-500 text-white" :
+              ["completado", "confirmar"].includes(step) && ["scanner", "gps", "foto"].includes(s) ? "bg-green-500 text-white" :
               "bg-muted text-muted-foreground"
             }`}>
-              {["completado", "confirmar"].includes(step) && ["scanner", "gps"].includes(s) ? (
+              {["completado", "confirmar"].includes(step) && ["scanner", "gps", "foto"].includes(s) ? (
                 <CheckCircle className="h-5 w-5" />
               ) : (
                 i + 1
@@ -275,27 +231,18 @@ export default function AsistenciaPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {ubicacionActual ? (
-              <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
-                <div className="flex items-center gap-2">
-                  <Satellite className="h-4 w-4 text-green-500" />
-                  <span className="font-medium text-green-500">GPS activo</span>
-                </div>
-                <p>Lat: {ubicacionActual.lat.toFixed(6)}</p>
-                <p>Lng: {ubicacionActual.lng.toFixed(6)}</p>
-                <p>Precisión: {ubicacionActual.precision.toFixed(0)}m</p>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Obteniendo ubicación...
-              </div>
-            )}
+            <div className="flex flex-col gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+               <p>Debes estar físicamente en la sede (Radio permitido: {sedeRadio}m).</p>
+               <p>Asegúrate de tener buena señal GPS (a cielo abierto o cerca de ventana).</p>
+            </div>
+            
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
             )}
-            <Button className="w-full" onClick={handleGPSValidation} disabled={!ubicacionActual}>
-              Validar Ubicación
+            
+            <Button className="w-full" size="lg" onClick={handleGPSValidation} disabled={gpsLoading}>
+              {gpsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Satellite className="mr-2 h-4 w-4" />}
+              {gpsLoading ? "Obteniendo precisión militar..." : "Validar mi posición GPS"}
             </Button>
           </CardContent>
         </Card>
@@ -309,17 +256,24 @@ export default function AsistenciaPage() {
               Foto de Evidencia
             </CardTitle>
             <CardDescription>
-              Toma una foto para registrar tu asistencia
+              Toma una foto para registrar tu asistencia (Se añadirá marca de agua automática)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <PhotoCapture
-              onPhoto={(url) => setFotoUrl(url)}
-              onClear={() => setFotoUrl(null)}
-              fotoUrl={fotoUrl}
+            <SecureCamera
+              gpsData={gpsCoords}
+              onCapture={(webpBlob) => {
+                // Convertir Blob a Base64 para guardarlo en IndexedDB Offline
+                const reader = new FileReader()
+                reader.readAsDataURL(webpBlob)
+                reader.onloadend = () => {
+                  setFotoData(reader.result as string)
+                }
+              }}
             />
-            <Button className="w-full" onClick={handleFoto} disabled={!fotoUrl}>
-              Continuar
+            
+            <Button className="w-full" onClick={() => setStep("confirmar")} disabled={!fotoData}>
+              Continuar a Confirmación
             </Button>
           </CardContent>
         </Card>
@@ -329,7 +283,7 @@ export default function AsistenciaPage() {
         <Card>
           <CardHeader>
             <CardTitle>Confirmar Asistencia</CardTitle>
-            <CardDescription>Verifica los datos antes de confirmar</CardDescription>
+            <CardDescription>Verifica los datos antes de confirmar (Soporta Modo Offline)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2 rounded-lg bg-muted p-3 text-sm">
@@ -347,18 +301,18 @@ export default function AsistenciaPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tipo:</span>
-                <span className="font-medium">Entrada</span>
+                <span className="font-medium text-blue-600">Entrada</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">GPS:</span>
+                <span className="text-muted-foreground">Precisión GPS:</span>
                 <Badge variant={gpsValidado ? "success" : "destructive"}>
-                  {gpsValidado ? "Válido" : "Inválido"}
+                  {gpsValidado ? `${Math.round(gpsCoords?.precision || 0)}m` : "Inválido"}
                 </Badge>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">QR:</span>
-                <Badge variant={qrValido ? "success" : "destructive"}>
-                  {qrValido ? "Válido" : "Inválido"}
+                <span className="text-muted-foreground">Evidencia Visual:</span>
+                <Badge variant={fotoData ? "success" : "destructive"}>
+                  {fotoData ? "Capturada" : "Ausente"}
                 </Badge>
               </div>
             </div>
@@ -367,7 +321,7 @@ export default function AsistenciaPage() {
             )}
             <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={marcando}>
               {marcando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Confirmar Asistencia
+              Confirmar Asistencia Segura
             </Button>
           </CardContent>
         </Card>
@@ -376,12 +330,19 @@ export default function AsistenciaPage() {
       {step === "completado" && (
         <Card>
           <CardHeader className="text-center">
-            <CheckCircle className="mx-auto h-16 w-16 text-green-500" />
-            <CardTitle className="text-xl">Asistencia Registrada</CardTitle>
-            <CardDescription>
-              {sedeNombre} — {new Date().toLocaleTimeString("es-PE")}
+            <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
+            <CardTitle className="text-2xl">Asistencia Registrada</CardTitle>
+            <CardDescription className="text-lg">
+              {sedeNombre} <br/> 
+              <span className="font-semibold text-foreground">{new Date().toLocaleTimeString("es-PE")}</span>
             </CardDescription>
           </CardHeader>
+          <CardContent className="text-center">
+             <p className="text-sm text-muted-foreground">Tu registro se sincronizará automáticamente en segundo plano cuando tengas conexión estable.</p>
+             <Button variant="outline" className="mt-6" onClick={() => window.location.href = "/agente/historial"}>
+               Ver mi historial
+             </Button>
+          </CardContent>
         </Card>
       )}
     </div>

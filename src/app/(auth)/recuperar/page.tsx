@@ -9,6 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2, ShieldCheck, ArrowLeft, CheckCircle } from "lucide-react"
 import Link from "next/link"
 
+function getBaseUrl() {
+  if (typeof window !== "undefined") return window.location.origin
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
+  return "http://localhost:3000"
+}
+
 export default function RecuperarPage() {
   const [email, setEmail] = useState("")
   const [enviado, setEnviado] = useState(false)
@@ -23,7 +29,7 @@ export default function RecuperarPage() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: `${getBaseUrl()}/login`,
       })
       if (error) throw error
       setEnviado(true)

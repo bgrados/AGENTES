@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useSupabase } from "@/providers/supabase-provider"
 import { StatCard } from "@/components/shared/stat-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,11 +15,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({ empresas: 0, sedes: 0, usuarios: 0, agentes: 0, asistenciasHoy: 0, incidenciasPendientes: 0 })
   const [cargando, setCargando] = useState(true)
 
-  useEffect(() => {
-    cargarDatos()
-  }, [])
-
-  async function cargarDatos() {
+  const cargarDatos = useCallback(async () => {
     const supabaseAny = supabase as any
 
     const [{ count: empresas }, { count: sedes }, { count: usuarios }, { count: agentes }] = await Promise.all([
@@ -43,7 +39,11 @@ export default function AdminDashboard() {
       incidenciasPendientes: incidenciasPendientes || 0,
     })
     setCargando(false)
-  }
+  }, [supabase])
+
+  useEffect(() => {
+    cargarDatos()
+  }, [cargarDatos])
 
   if (cargando) return <LoadingScreen />
 

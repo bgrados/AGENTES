@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuthStore } from "@/stores/auth-store"
 import type { UsuarioSession, UserRole } from "@/types/app"
@@ -20,29 +20,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const { setUsuario, setLoading } = useAuthStore()
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) {
-        cargarUsuario(session.user.id)
-      } else {
-        setLoading(false)
-      }
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session?.user) {
-        cargarUsuario(session.user.id)
-      } else {
-        setUsuario(null)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  async function cargarUsuario(authUid: string) {
+  const cargarUsuario = useCallback(async (authUid: string) => {
     const supabaseAny = supabase as any
     const { data: userData } = await supabaseAny
       .from("usuarios")
@@ -75,7 +53,29 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       setUsuario(null)
       setLoading(false)
     }
-  }
+  }, [supabase, setUsuario, setLoading])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session?.user) {
+        cargarUsuario(session.user.id)
+      } else {
+        setLoading(false)
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session?.user) {
+        cargarUsuario(session.user.id)
+      } else {
+        setUsuario(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [supabase.auth, cargarUsuario, setUsuario, setLoading])
 
   return (
     <SupabaseContext.Provider value={{ supabase, session }}>

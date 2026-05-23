@@ -4,6 +4,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/providers/theme-provider"
 import { SupabaseProvider } from "@/providers/supabase-provider"
 import { OfflineProvider } from "@/providers/offline-provider"
+import QueryProvider from "@/providers/query-provider"
 import { OfflineBanner } from "@/components/shared/offline-banner"
 import { Toaster } from "@/components/ui/toaster"
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register"
@@ -50,16 +51,18 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full">
-        <ThemeProvider>
-          <SupabaseProvider>
-            <OfflineProvider>
-              {children}
-              <OfflineBanner />
-              <Toaster />
-              <ServiceWorkerRegister />
-            </OfflineProvider>
-          </SupabaseProvider>
-        </ThemeProvider>
+        <QueryProvider>
+          <ThemeProvider>
+            <SupabaseProvider>
+              <OfflineProvider>
+                {children}
+                <OfflineBanner />
+                <Toaster />
+                <ServiceWorkerRegister />
+              </OfflineProvider>
+            </SupabaseProvider>
+          </ThemeProvider>
+        </QueryProvider>
       </body>
     </html>
   )

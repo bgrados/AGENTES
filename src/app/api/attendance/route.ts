@@ -27,6 +27,9 @@ export async function POST(request: Request) {
 
     if (sedeError) throw sedeError
 
+    let gpsValido = false
+    let distanciaCalculada = 0
+
     if (sede && latitud != null && longitud != null) {
       const R = 6371000
       const dLat = ((sede.latitud - latitud) * Math.PI) / 180
@@ -36,7 +39,8 @@ export async function POST(request: Request) {
         Math.cos((latitud * Math.PI) / 180) *
           Math.cos((sede.latitud * Math.PI) / 180) *
           Math.sin(dLng / 2) ** 2
-      const distancia = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+      distanciaCalculada = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+      gpsValido = distanciaCalculada <= (sede.radio_gps ?? 100)
     }
 
     const { data, error } = await supabaseAny.from("asistencia").insert({
@@ -45,6 +49,7 @@ export async function POST(request: Request) {
       tipo,
       latitud: latitud ?? null,
       longitud: longitud ?? null,
+      gps_valido: gpsValido,
       gps_precision: gps_precision ?? null,
       qr_escanado: qr_escanado ?? null,
       foto_url: foto_url ?? null,

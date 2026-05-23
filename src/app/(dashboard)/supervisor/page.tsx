@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useJefeSedes } from "@/hooks/use-jefe-sedes"
@@ -32,11 +32,7 @@ export default function SupervisorDashboard() {
   const [alertas, setAlertas] = useState<Alertas[]>([])
   const [cargando, setCargando] = useState(true)
 
-  useEffect(() => {
-    if (!cargandoJefe && !isLoading) cargarDatos()
-  }, [cargandoJefe, isLoading, sedeIds])
-
-  async function cargarDatos() {
+  const cargarDatos = useCallback(async () => {
     const supabaseAny = supabase as any
 
     if (esJefe && sedeIds.length === 0) {
@@ -56,7 +52,7 @@ export default function SupervisorDashboard() {
     let queryAsistencia = supabaseAny.from("asistencia").select("agente_id, sede_id").gte("fecha_hora", `${hoy}T00:00:00`).lte("fecha_hora", `${hoy}T23:59:59`)
     queryAsistencia = filterSedes(queryAsistencia)
     const { data: asistenciasHoy } = await queryAsistencia
-    const agentesActivos = new Set(asistenciasHoy?.map((a: any) => a.agente_id) || []).size
+    const agentesActivos = new Set(asistenciasHoy?.map((a: { agente_id: string }) => a.agente_id) || []).size
 
     let queryPuestos = supabaseAny.from("puestos").select("id").eq("activo", true)
     queryPuestos = filterSedes(queryPuestos)
@@ -67,16 +63,20 @@ export default function SupervisorDashboard() {
     queryIncidencias = filterSedes(queryIncidencias)
     const { data: incidencias } = await queryIncidencias
     const incidenciasHoy = incidencias?.length || 0
-    const incidenciasPendientes = incidencias?.filter((i: any) => i.estado === "pendiente").length || 0
-    const tardanzas = incidencias?.filter((i: any) => i.tipo === "tardanza").length || 0
+    const incidenciasPendientes = incidencias?.filter((i: { estado: string }) => i.estado === "pendiente").length || 0
+    const tardanzas = incidencias?.filter((i: { tipo: string }) => i.tipo === "tardanza").length || 0
 
     setStats({ agentesActivos, totalAgentes, puestosCubiertos: Math.min(agentesActivos, totalPuestos), totalPuestos, incidenciasHoy, incidenciasPendientes, tardanzas })
 
     if (incidencias && incidencias.length > 0) {
-      setAlertas(incidencias.filter((i: any) => i.estado === "pendiente").slice(0, 5))
+      setAlertas(incidencias.filter((i: { estado: string }) => i.estado === "pendiente").slice(0, 5))
     }
     setCargando(false)
-  }
+  }, [supabase, esJefe, sedeIds])
+
+  useEffect(() => {
+    if (!cargandoJefe && !isLoading) cargarDatos()
+  }, [cargandoJefe, isLoading, cargarDatos])
 
   if (isLoading || cargando || cargandoJefe) return <LoadingScreen />
 
