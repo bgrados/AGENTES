@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { Camera, Send, MapPin, Clock, FileText, Sun, Moon, Loader2, CheckCircle, Eye } from "lucide-react"
+import { Camera, Send, Clock, FileText, Sun, Moon, Loader2, CheckCircle, Copy } from "lucide-react"
 import { REPORTES_DIA, REPORTES_NOCHE } from "@/lib/constants"
 import { SecureCamera } from "@/components/camera/secure-camera"
 
@@ -53,7 +53,7 @@ export default function ReportesPage() {
   const [textoPreview, setTextoPreview] = useState("")
   const [mensajeWhatsApp, setMensajeWhatsApp] = useState("")
   const [fotoUrl, setFotoUrl] = useState("")
-  const [shareFailed, setShareFailed] = useState(false)
+  const [copiado, setCopiado] = useState(false)
 
   const [sedeId, setSedeId] = useState<string>("")
   const [sedeNombre, setSedeNombre] = useState<string>("")
@@ -133,7 +133,7 @@ export default function ReportesPage() {
     setConfirmado(false)
     setTextoPreview("")
     setMensajeWhatsApp("")
-    setShareFailed(false)
+    setCopiado(false)
     setError("")
   }
 
@@ -164,24 +164,27 @@ export default function ReportesPage() {
       let pos = gpsCoords
       if (!pos) pos = await requestLocation()
 
-      // Subir foto a Supabase Storage y obtener URL pública
       let fotoUrlSubida = ""
       if (fotoData) {
         try {
           const sb = supabase as any
-          const res = await fetch(fotoData)
-          const blob = await res.blob()
+          const partes = fotoData.split(',')
+          const mime = partes[0].match(/:(.*?);/)?.[1] || 'image/webp'
+          const raw = atob(partes[1])
+          const u8 = new Uint8Array(raw.length)
+          for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i)
+          const blob = new Blob([u8], { type: mime })
           const fileName = `${agenteId}_${horaSeleccionada.replace(":","")}_${Date.now()}.webp`
           const { error: uploadErr } = await sb.storage
             .from("agent-photos")
-            .upload(`reportes/${fileName}`, blob, { contentType: "image/webp", upsert: false })
+            .upload(`reportes/${fileName}`, blob, { contentType: mime, upsert: false })
           if (!uploadErr) {
             const { data: { publicUrl } } = sb.storage.from("agent-photos").getPublicUrl(`reportes/${fileName}`)
             fotoUrlSubida = publicUrl
             setFotoUrl(publicUrl)
           }
         } catch (e) {
-          console.warn("No se pudo subir la foto, se adjuntará después:", e)
+          console.warn("No se pudo subir la foto:", e)
         }
       }
 
@@ -201,7 +204,6 @@ export default function ReportesPage() {
       await syncEngine.queueOperation("reportes", "INSERT", payload)
       syncEngine.syncAll().catch(console.error)
 
-      // Incluir enlace de la foto en el texto de WhatsApp
       const textoFinal = fotoUrlSubida
         ? `${textoPreview}\n\nFoto: ${fotoUrlSubida}`
         : textoPreview
@@ -217,7 +219,6 @@ export default function ReportesPage() {
 
       setReportados(prev => new Set(prev).add(horaSeleccionada))
       setConfirmado(true)
-      setShareFailed(false)
       setMensajeWhatsApp(wpLink)
     } catch (err: any) {
       setError(err.message || "Error al confirmar el reporte.")
@@ -226,29 +227,39 @@ export default function ReportesPage() {
     }
   }
 
-  function handleAbrirWhatsApp() {
+  function handleCopiarTexto() {
+    navigator.clipboard.writeText(textoPreview)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2000)
+  }
+
+  async function base64ToFile(dataUrl: string): Promise<File> {
+    const partes = dataUrl.split(',')
+    const mime = partes[0].match(/:(.*?);/)?.[1] || 'image/jpeg'
+    const raw = atob(partes[1])
+    const u8 = new Uint8Array(raw.length)
+    for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i)
+    return new File([u8], 'reporte.' + mime.split('/')[1], { type: mime })
+  }
+
+  function handleCompartir() {
     const textoCompartir = fotoUrl
       ? `${textoPreview}\n\nFoto: ${fotoUrl}`
       : textoPreview
 
     if (typeof navigator.share === 'function' && fotoData) {
-      ;(async () => {
-        try {
-          const partes = fotoData.split(',')
-          const mime = partes[0].match(/:(.*?);/)?.[1] || 'image/webp'
-          const raw = atob(partes[1])
-          const u8 = new Uint8Array(raw.length)
-          for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i)
-          const file = new File([u8], 'reporte.' + mime.split('/')[1], { type: mime })
-          await navigator.share({ title: 'Reporte Operativo', text: textoCompartir, files: [file] })
-        } catch {
-          setShareFailed(true)
-        }
-      })()
+      base64ToFile(fotoData).then(file => {
+        navigator.share({ title: 'Reporte Operativo', text: textoCompartir, files: [file] })
+          .catch(() => {
+            // fallback: wa.me link
+            if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank')
+          })
+      }).catch(() => {
+        if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank')
+      })
       return
     }
 
-    // Desktop o sin foto: wa.me link directo (sincrono, no bloqueado)
     if (mensajeWhatsApp) {
       window.open(mensajeWhatsApp, '_blank')
     }
@@ -339,11 +350,8 @@ export default function ReportesPage() {
               </div>
             )}
 
-            {/* Vista previa del reporte */}
             <div className="space-y-2">
-              <Label className="flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5" /> Vista previa del reporte
-              </Label>
+              <Label>Vista previa del reporte</Label>
               <textarea
                 value={textoPreview}
                 onChange={(e) => setTextoPreview(e.target.value)}
@@ -364,33 +372,37 @@ export default function ReportesPage() {
                 )}
               </Button>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
                   <CheckCircle className="h-5 w-5 shrink-0" />
-                  Reporte confirmado y foto guardada
+                  Reporte confirmado
                 </div>
-                <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
-                  <p className="font-medium mb-1">Instrucciones:</p>
-                  <ol className="list-decimal list-inside space-y-1">
-                    <li>Toca el botón para compartir</li>
-                    <li>Elige WhatsApp en la ventana que aparece</li>
-                    <li>La foto y el texto se enviarán juntos</li>
-                  </ol>
-                </div>
-                {shareFailed && (
-                  <div className="rounded-md bg-yellow-50 dark:bg-yellow-950 p-2 text-xs text-yellow-700 dark:text-yellow-300">
-                    El envío con foto no funcionó en este dispositivo. Usa "Solo texto" y la foto se envía como enlace.
+
+                {fotoData && (
+                  <div>
+                    <Label>Foto tomada</Label>
+                    <div className="mt-1 rounded-lg overflow-hidden border bg-black/5">
+                      <img
+                        src={fotoData}
+                        alt="Foto de evidencia"
+                        className="w-full h-auto max-h-64 object-contain"
+                      />
+                    </div>
                   </div>
                 )}
-                <div className="flex flex-col gap-2">
-                  {fotoUrl && (
-                    <Button size="lg" variant={shareFailed ? "outline" : "default"} onClick={handleAbrirWhatsApp}>
-                      <Send className="mr-2 h-4 w-4" /> Compartir con foto
-                    </Button>
-                  )}
-                  <Button size="lg" variant="default" onClick={() => { if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank') }}>
-                    {fotoUrl ? "Enviar solo texto (foto como enlace)" : "Enviar reporte a WhatsApp"}
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <Button size="lg" onClick={handleCompartir}>
+                    <Send className="mr-2 h-4 w-4" /> Compartir en WhatsApp
                   </Button>
+                  <div className="flex gap-2">
+                    <Button size="lg" variant="outline" className="flex-1" onClick={() => { if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank') }}>
+                      <Send className="mr-2 h-4 w-4" /> Solo texto
+                    </Button>
+                    <Button size="lg" variant="outline" className="flex-1" onClick={handleCopiarTexto}>
+                      <Copy className="mr-2 h-4 w-4" /> {copiado ? "Copiado" : "Copiar texto"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
