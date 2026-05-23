@@ -165,6 +165,13 @@ export default function AsignarSedesPage() {
       return
     }
 
+    if (esJefe) {
+      const { data: rolJefe } = await supabaseAny.from("roles").select("id").eq("nombre", "jefe_grupo").maybeSingle()
+      if (rolJefe) {
+        await supabaseAny.from("usuarios").update({ rol_id: rolJefe.id }).eq("id", agenteSeleccionado.usuario_id)
+      }
+    }
+
     setDialogOpen(false)
     setGuardando(false)
 
