@@ -52,6 +52,7 @@ export default function ReportesPage() {
   const [error, setError] = useState("")
   const [textoPreview, setTextoPreview] = useState("")
   const [mensajeWhatsApp, setMensajeWhatsApp] = useState("")
+  const [fotoUrl, setFotoUrl] = useState("")
 
   const [sedeId, setSedeId] = useState<string>("")
   const [sedeNombre, setSedeNombre] = useState<string>("")
@@ -162,7 +163,7 @@ export default function ReportesPage() {
       if (!pos) pos = await requestLocation()
 
       // Subir foto a Supabase Storage y obtener URL pública
-      let fotoUrl = ""
+      let fotoUrlSubida = ""
       if (fotoData) {
         try {
           const sb = supabase as any
@@ -174,7 +175,8 @@ export default function ReportesPage() {
             .upload(`reportes/${fileName}`, blob, { contentType: "image/webp", upsert: false })
           if (!uploadErr) {
             const { data: { publicUrl } } = sb.storage.from("agent-photos").getPublicUrl(`reportes/${fileName}`)
-            fotoUrl = publicUrl
+            fotoUrlSubida = publicUrl
+            setFotoUrl(publicUrl)
           }
         } catch (e) {
           console.warn("No se pudo subir la foto, se adjuntará después:", e)
@@ -190,7 +192,7 @@ export default function ReportesPage() {
         latitud: pos.latitud,
         longitud: pos.longitud,
         foto_data: fotoData ?? undefined,
-        foto_url: fotoUrl || undefined,
+        foto_url: fotoUrlSubida || undefined,
         novedades: textoPreview,
       }
 
@@ -198,8 +200,8 @@ export default function ReportesPage() {
       syncEngine.syncAll().catch(console.error)
 
       // Incluir enlace de la foto en el texto de WhatsApp
-      const textoFinal = fotoUrl
-        ? `${textoPreview}\n\nFoto: ${fotoUrl}`
+      const textoFinal = fotoUrlSubida
+        ? `${textoPreview}\n\nFoto: ${fotoUrlSubida}`
         : textoPreview
 
       const wpLink = generateWhatsAppLink(supervisorTelefono, {
@@ -221,7 +223,27 @@ export default function ReportesPage() {
     }
   }
 
-  function handleAbrirWhatsApp() {
+  async function handleAbrirWhatsApp() {
+    const textoCompartir = fotoUrl
+      ? `${textoPreview}\n\nFoto: ${fotoUrl}`
+      : textoPreview
+
+    // Intentar Web Share API (mobile: comparte texto + foto como archivo)
+    if (fotoData && navigator.canShare) {
+      try {
+        const res = await fetch(fotoData)
+        const blob = await res.blob()
+        const file = new File([blob], "reporte.webp", { type: "image/webp" })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: "Reporte Operativo", text: textoCompartir, files: [file] })
+          return
+        }
+      } catch {
+        // share cancelado por usuario o fallback
+      }
+    }
+
+    // Fallback: wa.me link solo texto
     if (mensajeWhatsApp) {
       window.open(mensajeWhatsApp, '_blank')
     }
@@ -345,14 +367,13 @@ export default function ReportesPage() {
                 <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
                   <p className="font-medium mb-1">Instrucciones:</p>
                   <ol className="list-decimal list-inside space-y-1">
-                    <li>Toca el botón para abrir WhatsApp</li>
-                    <li>El mensaje incluye el enlace a la foto</li>
-                    <li>El supervisor podrá abrir el enlace para verla</li>
-                    <li>Si quieres, adjunta también la foto manualmente</li>
+                    <li>Toca el botón para compartir</li>
+                    <li>Elige WhatsApp en la ventana que aparece</li>
+                    <li>La foto y el texto se enviarán juntos</li>
                   </ol>
                 </div>
                 <Button className="w-full" size="lg" variant="default" onClick={handleAbrirWhatsApp}>
-                  <Send className="mr-2 h-4 w-4" /> Enviar Reporte a WhatsApp
+                  <Send className="mr-2 h-4 w-4" /> Compartir en WhatsApp
                 </Button>
               </div>
             )}
