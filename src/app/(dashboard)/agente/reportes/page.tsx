@@ -270,7 +270,6 @@ export default function ReportesPage() {
   }
 
   return (
-  return (
     <div className="space-y-6 pb-12">
       <div>
         <h1 className="text-2xl font-bold">Reportes Operativos</h1>
