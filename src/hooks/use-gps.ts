@@ -6,14 +6,16 @@ import { GPS_CONFIG } from "@/lib/constants"
 
 export function useGPS() {
   const { ubicacionActual, tracking, gpsActivo, setUbicacionActual, setTracking, setGpsActivo } = useGPSStore()
-  const checkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const watchIdRef = useRef<number | null>(null)
 
   const iniciarTracking = useCallback(() => {
     if (!navigator.geolocation) return
 
+    if (watchIdRef.current !== null) return
+
     setTracking(true)
 
-    const watchId = navigator.geolocation.watchPosition(
+    watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
         setUbicacionActual({
           lat: position.coords.latitude,
@@ -31,12 +33,15 @@ export function useGPS() {
         maximumAge: 0,
       },
     )
-
-    return () => {
-      navigator.geolocation.clearWatch(watchId)
-      setTracking(false)
-    }
   }, [setUbicacionActual, setTracking, setGpsActivo])
+
+  const detenerTracking = useCallback(() => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
+      watchIdRef.current = null
+    }
+    setTracking(false)
+  }, [setTracking])
 
   const obtenerPosicion = useCallback((): Promise<GeolocationPosition> => {
     return new Promise((resolve, reject) => {
@@ -73,27 +78,20 @@ export function useGPS() {
   }, [])
 
   useEffect(() => {
-    if (!navigator.geolocation) return
-    checkIntervalRef.current = setInterval(() => {
-      navigator.geolocation.getCurrentPosition(
-        () => setGpsActivo(true),
-        () => setGpsActivo(false),
-        { timeout: 5000 },
-      )
-    }, 30000)
     return () => {
-      if (checkIntervalRef.current) {
-        clearInterval(checkIntervalRef.current)
-        checkIntervalRef.current = null
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+        watchIdRef.current = null
       }
     }
-  }, [setGpsActivo])
+  }, [])
 
   return {
     ubicacionActual,
     tracking,
     gpsActivo,
     iniciarTracking,
+    detenerTracking,
     obtenerPosicion,
     validarDistancia,
   }

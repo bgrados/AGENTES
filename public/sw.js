@@ -88,7 +88,7 @@ async function syncData() {
     const response = await cache.match(pendingKey)
     if (response) {
       const data = await response.json()
-      await fetch("/api/sync/upload", {
+      await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),

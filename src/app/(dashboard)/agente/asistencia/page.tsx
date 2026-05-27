@@ -10,14 +10,13 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { MapPin, Camera, QrCode, CheckCircle, Loader2, Satellite, Send, FileText } from "lucide-react"
+import { MapPin, QrCode, CheckCircle, Loader2, Satellite, Send, FileText, Copy } from "lucide-react"
 import { QRScanner } from "@/components/qr/qr-scanner"
-import { SecureCamera } from "@/components/camera/secure-camera"
 import { useAttendance } from "@/hooks/use-attendance"
 import { obtenerSedeAgente, type SedeData } from "@/lib/supabase/agente-sede"
 import type { Coordenadas, EdificioEstado } from "@/types/app"
 
-type Step = "scanner" | "gps" | "foto" | "reporte" | "confirmar" | "completado"
+type Step = "scanner" | "gps" | "reporte" | "confirmar" | "completado"
 
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"]
@@ -121,7 +120,7 @@ export default function AsistenciaPage() {
   const [sedeData, setSedeData] = useState<SedeData | null>(null)
   const [gpsCoords, setGpsCoords] = useState<Coordenadas | null>(null)
   const [gpsValidado, setGpsValidado] = useState(false)
-  const [fotoData, setFotoData] = useState<string | null>(null)
+  const [copiado, setCopiado] = useState(false)
 
   const [tipo, setTipo] = useState<"entrada" | "salida">("entrada")
   const [relevoNombre, setRelevoNombre] = useState("")
@@ -275,7 +274,11 @@ export default function AsistenciaPage() {
       }
 
       setGpsValidado(true)
-      setStep("foto")
+      if (usuario?.rol === "jefe_grupo") {
+        setStep("reporte")
+      } else {
+        setStep("confirmar")
+      }
     } catch (err: any) {
       setError(err.message || "Error al validar ubicación GPS")
       setGpsValidado(false)
@@ -285,7 +288,7 @@ export default function AsistenciaPage() {
   const handleConfirmar = useCallback(async () => {
     if (!usuario || !gpsCoords || !agenteRecordId || !sedeData) return
 
-    const textoFinal = reporteTexto
+    const textoFinal = usuario?.rol === "jefe_grupo" ? reporteTexto : undefined
 
     const result = await marcar({
       tipo,
@@ -295,7 +298,6 @@ export default function AsistenciaPage() {
       longitud: gpsCoords.lng,
       gps_precision: gpsCoords.precision,
       qr_escanado: codigoEscanado,
-      foto_data: fotoData ?? undefined,
       observaciones: textoFinal,
     })
 
@@ -305,13 +307,19 @@ export default function AsistenciaPage() {
     }
 
     setStep("completado")
-  }, [usuario, gpsCoords, agenteRecordId, sedeData, reporteTexto, marcar, tipo, codigoEscanado, fotoData])
+  }, [usuario, gpsCoords, agenteRecordId, sedeData, reporteTexto, marcar, tipo, codigoEscanado])
 
   function abrirWhatsApp() {
     if (!sedeData) return
     const numero = sedeData.whatsapp || "51910545980"
     const link = `https://wa.me/${numero.replace(/\D/g, "")}?text=${encodeURIComponent(reporteTexto)}`
     window.open(link, "_blank")
+  }
+
+  function handleCopiarTexto() {
+    navigator.clipboard.writeText(reporteTexto)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2000)
   }
 
   const opcionesEdificio: { value: EdificioEstado; label: string }[] = sedeData?.tiene_almacen
@@ -335,33 +343,35 @@ export default function AsistenciaPage() {
         <p className="text-muted-foreground">Sigue los pasos para registrar tu ingreso o salida</p>
       </div>
 
-      <div className="flex items-center justify-between overflow-x-auto">
-        {["scanner", "gps", "foto", "reporte", "confirmar"].map((s, i) => (
-          <div key={s} className="flex items-center gap-2 shrink-0">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-              step === s ? "bg-primary text-primary-foreground" :
-              (step === "completado" || (["confirmar", "reporte"].includes(step) && ["scanner", "gps", "foto", "reporte"].includes(s) && s !== "confirmar")) ? "bg-green-500 text-white" :
-              "bg-muted text-muted-foreground"
-            }`}>
-              {step === "completado" && ["scanner", "gps", "foto", "reporte", "confirmar"].includes(s) ? (
-                <CheckCircle className="h-5 w-5" />
-              ) : (
-                i + 1
-              )}
+      {usuario?.rol === "jefe_grupo" && (
+        <div className="flex items-center justify-between overflow-x-auto">
+          {["scanner", "gps", "reporte", "confirmar"].map((s, i) => (
+            <div key={s} className="flex items-center gap-2 shrink-0">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+                step === s ? "bg-primary text-primary-foreground" :
+                (step === "completado" && ["scanner", "gps", "reporte"].includes(s)) ? "bg-green-500 text-white" :
+                "bg-muted text-muted-foreground"
+              }`}>
+                {step === "completado" && ["scanner", "gps", "reporte", "confirmar"].includes(s) ? (
+                  <CheckCircle className="h-5 w-5" />
+                ) : (
+                  i + 1
+                )}
+              </div>
+              {i < 3 && <div className="h-px w-6 bg-border hidden sm:block" />}
             </div>
-            {i < 4 && <div className="h-px w-6 bg-border hidden sm:block" />}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {step === "scanner" && (
-        <Card>
+        <Card className="glass-panel border-white/10 shadow-2xl animate-scan-glow">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-white">
+              <QrCode className="h-5 w-5 text-blue-400" />
               Escanear tu Código QR
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-400">
               Escanea el código QR con tu código de agente (ej: AGT-001)
             </CardDescription>
           </CardHeader>
@@ -379,67 +389,40 @@ export default function AsistenciaPage() {
       )}
 
       {step === "gps" && (
-        <Card>
+        <Card className="glass-panel border-white/10 shadow-2xl">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-white">
+              <MapPin className="h-5 w-5 text-blue-400" />
               Validar Ubicación
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-400">
               {sedeData?.nombre} — {agenteNombre}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-col gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+            <div className="flex flex-col gap-2 rounded-lg glass-panel-light p-4 text-sm text-gray-300">
                <p>Debes estar físicamente en la sede (Radio permitido: {sedeData?.radio_gps || 100}m).</p>
                <p>Asegúrate de tener buena señal GPS (a cielo abierto o cerca de ventana).</p>
             </div>
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
             )}
-            <Button className="w-full" size="lg" onClick={handleGPSValidation} disabled={gpsLoading}>
-              {gpsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Satellite className="mr-2 h-4 w-4" />}
+            <Button className="w-full premium-btn-hover transition-transform duration-200" size="lg" onClick={handleGPSValidation} disabled={gpsLoading}>
+              {gpsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Satellite className={`mr-2 h-4 w-4 ${gpsLoading ? "" : "animate-gps-orbit text-blue-400"}`} />}
               {gpsLoading ? "Obteniendo precisión militar..." : "Validar mi posición GPS"}
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {step === "foto" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Camera className="h-5 w-5" />
-              Foto de Evidencia
-            </CardTitle>
-            <CardDescription>
-              Toma una foto para registrar tu asistencia
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <SecureCamera
-              gpsData={gpsCoords ? { lat: gpsCoords.lat, lng: gpsCoords.lng } : null}
-              onCapture={(webpBlob) => {
-                const reader = new FileReader()
-                reader.readAsDataURL(webpBlob)
-                reader.onloadend = () => setFotoData(reader.result as string)
-              }}
-            />
-            <Button className="w-full" onClick={() => setStep("reporte")} disabled={!fotoData}>
-              Continuar a Reporte
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
       {step === "reporte" && (
-        <Card>
+        <Card className="glass-panel border-white/10 shadow-2xl">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-white">
+              <FileText className="h-5 w-5 text-blue-400" />
               Reporte de {tipo === "entrada" ? "Ingreso" : "Salida"}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-gray-400">
               Completa los datos y edita el texto del reporte si es necesario
             </CardDescription>
           </CardHeader>
@@ -449,18 +432,18 @@ export default function AsistenciaPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Tipo de marcación</Label>
+              <Label className="text-gray-300">Tipo de marcación</Label>
               <div className="flex gap-2">
                 <Button
                   variant={tipo === "entrada" ? "default" : "outline"}
-                  className="flex-1"
+                  className="flex-1 premium-btn-hover transition-all duration-200"
                   onClick={() => setTipo("entrada")}
                 >
                   Entrada
                 </Button>
                 <Button
                   variant={tipo === "salida" ? "default" : "outline"}
-                  className="flex-1"
+                  className="flex-1 premium-btn-hover transition-all duration-200"
                   onClick={() => setTipo("salida")}
                 >
                   Salida
@@ -469,17 +452,18 @@ export default function AsistenciaPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="relevo">Guardia que {tipo === "entrada" ? "entrega" : "ingresa"} (relevo)</Label>
+              <Label htmlFor="relevo" className="text-gray-300">Guardia que {tipo === "entrada" ? "entrega" : "ingresa"} (relevo)</Label>
               <Input
                 id="relevo"
                 placeholder="Nombre del relevo"
                 value={relevoNombre}
                 onChange={(e) => setRelevoNombre(e.target.value)}
+                className="bg-slate-900/50 border-white/10 focus:border-blue-500 text-white placeholder:text-gray-500"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Estado de la sede</Label>
+              <Label className="text-gray-300">Estado de la sede</Label>
               <div className="flex flex-wrap gap-2">
                 {opcionesEdificio.map((op) => (
                   <Button
@@ -487,6 +471,7 @@ export default function AsistenciaPage() {
                     variant={edificioEstado === op.value ? "default" : "outline"}
                     size="sm"
                     onClick={() => setEdificioEstado(op.value)}
+                    className="premium-btn-hover transition-all duration-200"
                   >
                     {op.label}
                   </Button>
@@ -495,15 +480,15 @@ export default function AsistenciaPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Texto del reporte (editable)</Label>
+              <Label className="text-gray-300">Texto del reporte (editable)</Label>
               <textarea
-                className="w-full min-h-[280px] rounded-md border bg-muted p-3 text-xs font-mono resize-y"
+                className="w-full min-h-[280px] rounded-md border bg-slate-900/60 border-white/10 p-3 text-xs font-mono resize-y text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 value={reporteTexto}
                 onChange={(e) => setReporteTexto(e.target.value)}
               />
             </div>
 
-            <Button className="w-full" onClick={() => setStep("confirmar")}>
+            <Button className="w-full premium-btn-hover transition-transform duration-200 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setStep("confirmar")}>
               Continuar a Confirmación
             </Button>
           </CardContent>
@@ -511,96 +496,104 @@ export default function AsistenciaPage() {
       )}
 
       {step === "confirmar" && (
-        <Card>
+        <Card className="glass-panel border-white/10 shadow-2xl">
           <CardHeader>
-            <CardTitle>Confirmar Asistencia</CardTitle>
-            <CardDescription>Verifica los datos antes de confirmar</CardDescription>
+            <CardTitle className="text-white">Confirmar Asistencia</CardTitle>
+            <CardDescription className="text-gray-400">Verifica los datos antes de confirmar</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2 rounded-lg bg-muted p-3 text-sm">
+            <div className="space-y-2 rounded-lg glass-panel-light p-3 text-sm text-gray-200">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Agente:</span>
+                <span className="text-gray-400">Agente:</span>
                 <span className="font-medium">{agenteNombre}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Código:</span>
+                <span className="text-gray-400">Código:</span>
                 <span className="font-medium">{codigoEscanado}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Sede:</span>
+                <span className="text-gray-400">Sede:</span>
                 <span className="font-medium">{sedeData?.nombre}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Tipo:</span>
-                <span className={`font-medium ${tipo === "entrada" ? "text-blue-600" : "text-orange-600"}`}>
+                <span className="text-gray-400">Tipo:</span>
+                <span className={`font-medium ${tipo === "entrada" ? "text-blue-400" : "text-amber-400"}`}>
                   {tipo === "entrada" ? "Entrada" : "Salida"}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Relevo:</span>
+                <span className="text-gray-400">Relevo:</span>
                 <span className="font-medium">{relevoNombre || "—"}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Precisión GPS:</span>
+                <span className="text-gray-400">Precisión GPS:</span>
                 <Badge variant={gpsValidado ? "success" : "destructive"}>
                   {gpsValidado ? `${Math.round(gpsCoords?.precision || 0)}m` : "Inválido"}
                 </Badge>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Evidencia Visual:</span>
-                <Badge variant={fotoData ? "success" : "destructive"}>
-                  {fotoData ? "Capturada" : "Ausente"}
-                </Badge>
-              </div>
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">TEXTO DEL REPORTE</p>
-              <div className="whitespace-pre-wrap rounded-md border bg-card p-3 text-xs text-card-foreground">
-                {reporteTexto}
+            {usuario?.rol === "jefe_grupo" && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-gray-400">TEXTO DEL REPORTE</p>
+                <div className="whitespace-pre-wrap rounded-md border border-white/10 bg-slate-950/60 p-3 text-xs text-gray-200 font-mono">
+                  {reporteTexto}
+                </div>
               </div>
-            </div>
+            )}
 
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
             )}
 
             <div className="flex flex-col gap-2">
-              <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={marcando}>
+              <Button className="w-full premium-btn-hover transition-transform duration-200 bg-blue-600 hover:bg-blue-700 text-white" size="lg" onClick={handleConfirmar} disabled={marcando}>
                 {marcando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
                 Confirmar Asistencia
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setStep("reporte")}>
-                Volver a editar reporte
-              </Button>
+              {usuario?.rol === "jefe_grupo" && (
+                <Button variant="outline" size="sm" onClick={() => setStep("reporte")} className="premium-btn-hover border-white/10 text-gray-300 hover:bg-slate-800">
+                  Volver a editar reporte
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
       {step === "completado" && (
-        <Card>
+        <Card className="glass-panel border-white/10 shadow-2xl border-green-500/30">
           <CardHeader className="text-center">
-            <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
-            <CardTitle className="text-2xl">Asistencia Registrada</CardTitle>
-            <CardDescription className="text-lg">
+            <CheckCircle className="mx-auto h-16 w-16 text-green-400 mb-4 drop-shadow-[0_0_10px_rgba(34,197,94,0.3)] animate-pulse" />
+            <CardTitle className="text-2xl text-white">Asistencia Registrada</CardTitle>
+            <CardDescription className="text-lg text-gray-300">
               {sedeData?.nombre} <br/> 
-              <span className="font-semibold text-foreground">{new Date().toLocaleTimeString("es-PE")}</span>
+              <span className="font-semibold text-white">{new Date().toLocaleTimeString("es-PE")}</span>
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-gray-400">
               {tipo === "entrada" ? "Ingreso" : "Salida"} registrado correctamente.
             </p>
             <div className="flex flex-col gap-2">
-              <Button onClick={abrirWhatsApp} size="lg">
-                <Send className="mr-2 h-4 w-4" /> Enviar reporte a WhatsApp
-              </Button>
-              <Button variant="outline" onClick={() => window.location.href = "/agente/historial"}>
+              {usuario?.rol === "jefe_grupo" && (
+                <>
+                  <Button onClick={abrirWhatsApp} size="lg" className="premium-btn-hover bg-green-600 hover:bg-green-700 text-white">
+                    <Send className="mr-2 h-4 w-4" /> Enviar reporte a WhatsApp
+                  </Button>
+                  <Button variant="outline" size="lg" onClick={handleCopiarTexto} className="premium-btn-hover border-white/10 text-gray-300 hover:bg-slate-800">
+                    <Copy className="mr-2 h-4 w-4" /> {copiado ? "¡Copiado!" : "Copiar texto del reporte"}
+                  </Button>
+                  <p className="text-xs text-gray-500">
+                    Adjunta la foto manualmente desde tu galería al enviar por WhatsApp
+                  </p>
+                </>
+              )}
+              <Button variant="outline" onClick={() => window.location.href = "/agente/historial"} className="premium-btn-hover border-white/10 text-gray-300 hover:bg-slate-800">
                 Ver mi historial
               </Button>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => window.location.reload()}>
+            <Button variant="ghost" size="sm" onClick={() => window.location.reload()} className="text-gray-400 hover:text-white">
               Nueva marcación
             </Button>
           </CardContent>

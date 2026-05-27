@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useRef } from "react"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSupabase } from "@/providers/supabase-provider"
 import { useSecureGps } from "@/hooks/use-secure-gps"
@@ -12,9 +12,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { LoadingScreen } from "@/components/shared/loading-screen"
-import { Camera, Send, Clock, FileText, Sun, Moon, Loader2, CheckCircle, Copy } from "lucide-react"
+import { Camera, Send, Clock, FileText, Sun, Moon, Loader2, CheckCircle, Copy, Download, FolderOpen } from "lucide-react"
 import { REPORTES_DIA, REPORTES_NOCHE } from "@/lib/constants"
 import { SecureCamera } from "@/components/camera/secure-camera"
+import { compressImageToWebP } from "@/lib/camera/compression"
 
 function generarTextoReporte(opts: {
   sedeNombre: string
@@ -45,6 +46,7 @@ export default function ReportesPage() {
   const [novedades, setNovedades] = useState("")
   const [horaSeleccionada, setHoraSeleccionada] = useState("")
   const [fotoData, setFotoData] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [turno, setTurno] = useState<"dia" | "noche">("noche")
   const [cargandoTurno, setCargandoTurno] = useState(true)
   const [confirmando, setConfirmando] = useState(false)
@@ -102,16 +104,18 @@ export default function ReportesPage() {
 
   const REPORTES = turno === "dia" ? REPORTES_DIA : REPORTES_NOCHE
 
+  const esJefe = usuario?.rol === "jefe_grupo"
+
   const rangoGpos = turno === "dia"
     ? [
-        { id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno", icon: Sun, horas: ["07:00"], requiere_foto: true, requiere_novedades: false },
-        { id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["19:00"], requiere_foto: true, requiere_novedades: false },
+        ...(esJefe ? [{ id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno", icon: Sun, horas: ["07:00"], requiere_foto: true, requiere_novedades: false }] : []),
+        ...(esJefe ? [{ id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["19:00"], requiere_foto: true, requiere_novedades: false }] : []),
       ]
     : [
-        { id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno noche", icon: Sun, horas: ["19:00"], requiere_foto: true, requiere_novedades: false },
+        ...(esJefe ? [{ id: "ingreso", label: "Ingreso", descripcion: "Registro de ingreso al turno noche", icon: Sun, horas: ["19:00"], requiere_foto: true, requiere_novedades: false }] : []),
         { id: "estandar", label: "Reporte Estándar", descripcion: "Reporte horario sin foto", icon: FileText, horas: ["20:00","21:00","22:00","23:00","00:00"], requiere_foto: false, requiere_novedades: true },
         { id: "con_foto", label: "Reporte con Foto", descripcion: "Reporte horario con foto de evidencia", icon: Camera, horas: ["01:00","02:00","03:00","04:00","05:00"], requiere_foto: true, requiere_novedades: true },
-        { id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["07:00"], requiere_foto: true, requiere_novedades: false },
+        ...(esJefe ? [{ id: "relevo", label: "Relevo", descripcion: "Registro de salida y relevo", icon: Moon, horas: ["07:00"], requiere_foto: true, requiere_novedades: false }] : []),
       ]
 
   const grupos = rangoGpos.map(g => ({
@@ -266,26 +270,27 @@ export default function ReportesPage() {
   }
 
   return (
+  return (
     <div className="space-y-6 pb-12">
       <div>
         <h1 className="text-2xl font-bold">Reportes Operativos</h1>
         <p className="text-muted-foreground">Selecciona un horario para registrar tu reporte</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            Horas del Turno {turno === "dia" ? "Día" : "Noche"}
+      <Card className="glass-panel border-white/10 shadow-2xl">
+        <CardHeader className="border-b border-white/5">
+          <CardTitle className="flex items-center gap-2 text-white">
+            <Clock className="h-5 w-5 text-blue-400" />
+            Horas del Turno {turno === "dia" ? "Día (07:00 - 19:00)" : "Noche (19:00 - 07:00)"}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 pt-6">
           {grupos.map(grupo => (
-            <div key={grupo.id}>
-              <div className="mb-2 flex items-center gap-2">
-                <grupo.icon className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">{grupo.label}</span>
-                <span className="text-xs text-muted-foreground">— {grupo.descripcion}</span>
+            <div key={grupo.id} className="space-y-3">
+              <div className="flex items-center gap-2">
+                <grupo.icon className="h-4 w-4 text-blue-400" />
+                <span className="text-sm font-medium text-white">{grupo.label}</span>
+                <span className="text-xs text-gray-400">— {grupo.descripcion}</span>
               </div>
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                 {grupo.slots.map(({ hora, config }) => {
@@ -294,14 +299,18 @@ export default function ReportesPage() {
                     <Button
                       key={hora}
                       variant={horaSeleccionada === hora ? "default" : reportado ? "secondary" : "outline"}
-                      className={`flex-col h-auto py-2 gap-1 relative ${reportado ? "border-green-500" : ""}`}
+                      className={`flex-col h-auto py-2.5 gap-1.5 relative premium-btn-hover transition-all duration-200 ${
+                        horaSeleccionada === hora ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]" :
+                        reportado ? "bg-green-950/40 text-green-300 border-green-500/50 hover:bg-green-900/30" :
+                        "border-white/10 text-gray-300 bg-slate-900/40 hover:bg-slate-800"
+                      }`}
                       onClick={() => handleSeleccionar(hora)}
                     >
                       {reportado && (
-                        <CheckCircle className="absolute -top-1.5 -right-1.5 h-4 w-4 text-green-500 bg-white rounded-full" />
+                        <CheckCircle className="absolute -top-1.5 -right-1.5 h-4 w-4 text-green-400 bg-slate-950 rounded-full" />
                       )}
                       <span className="text-xs font-bold">{hora}</span>
-                      <Badge variant={config.requiere_foto ? "default" : "secondary"} className="text-[10px] px-1 py-0 leading-tight">
+                      <Badge className={`text-[10px] px-1 py-0 leading-tight ${config.requiere_foto ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "bg-gray-800 text-gray-300"}`}>
                         {config.requiere_foto ? "FOTO" : "TXT"}
                       </Badge>
                     </Button>
@@ -314,17 +323,18 @@ export default function ReportesPage() {
       </Card>
 
       {horaSeleccionada && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {configActual?.label || horaSeleccionada}
+        <Card className="glass-panel border-white/10 shadow-2xl mt-4 animate-scan-glow">
+          <CardHeader className="border-b border-white/5">
+            <CardTitle className="text-base text-white flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-400" />
+              Reporte Programado — {configActual?.label || horaSeleccionada}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-6">
             {grupoActual?.requiere_foto && !confirmado && (
-              <div>
-                <Label>Foto de Evidencia</Label>
-                <div className="mt-1">
+              <div className="space-y-2">
+                <Label className="text-gray-300">Foto de Evidencia (Obligatorio)</Label>
+                <div className="mt-1 space-y-3">
                   <SecureCamera
                     gpsData={gpsCoords ? { lat: gpsCoords.latitud, lng: gpsCoords.longitud } : null}
                     onCapture={(webpBlob) => {
@@ -333,29 +343,65 @@ export default function ReportesPage() {
                       reader.onloadend = () => setFotoData(reader.result as string)
                     }}
                   />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full premium-btn-hover border-white/10 text-gray-300 hover:bg-slate-800"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <FolderOpen className="mr-2 h-4 w-4 text-blue-400" /> Elegir de galería
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      compressImageToWebP(file, { maxWidthOrHeight: 1280, quality: 0.8 })
+                        .then((compressedBlob) => {
+                          const reader = new FileReader()
+                          reader.onloadend = () => setFotoData(reader.result as string)
+                          reader.readAsDataURL(compressedBlob)
+                        })
+                        .catch((err) => {
+                          console.error("Error al comprimir imagen de galería:", err)
+                          const reader = new FileReader()
+                          reader.onloadend = () => setFotoData(reader.result as string)
+                          reader.readAsDataURL(file)
+                        })
+                      e.target.value = ''
+                    }}
+                  />
+                  {fotoData && (
+                    <div className="rounded-lg overflow-hidden border border-white/10 bg-black/40 shadow-inner">
+                      <img src={fotoData} alt="Preview" className="w-full h-auto max-h-48 object-contain" />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {grupoActual?.requiere_novedades && !confirmado && (
               <div className="space-y-2">
-                <Label htmlFor="novedades">Novedades Operativas</Label>
+                <Label htmlFor="novedades" className="text-gray-300">Novedades Operativas</Label>
                 <textarea
                   id="novedades"
                   placeholder="Describe las novedades operativas..."
                   value={novedades}
                   onChange={(e) => setNovedades(e.target.value)}
-                  className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="w-full min-h-[80px] rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
                 />
               </div>
             )}
 
             <div className="space-y-2">
-              <Label>Vista previa del reporte</Label>
+              <Label className="text-gray-300">Vista previa del reporte (editable)</Label>
               <textarea
                 value={textoPreview}
                 onChange={(e) => setTextoPreview(e.target.value)}
-                className="w-full min-h-[140px] rounded-md border border-input bg-muted/30 px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="w-full min-h-[140px] rounded-md border border-white/10 bg-slate-950/60 p-3 text-sm font-mono text-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
               />
             </div>
 
@@ -364,7 +410,7 @@ export default function ReportesPage() {
             )}
 
             {!confirmado ? (
-              <Button className="w-full" size="lg" onClick={handleConfirmar} disabled={confirmando}>
+              <Button className="w-full premium-btn-hover transition-transform duration-200 bg-blue-600 hover:bg-blue-700 text-white" size="lg" onClick={handleConfirmar} disabled={confirmando}>
                 {confirmando ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Subiendo foto y confirmando...</>
                 ) : (
@@ -373,34 +419,41 @@ export default function ReportesPage() {
               </Button>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
+                <div className="flex items-center gap-2 rounded-lg bg-green-950/30 border border-green-500/20 p-3 text-sm text-green-300">
                   <CheckCircle className="h-5 w-5 shrink-0" />
-                  Reporte confirmado
+                  Reporte confirmado correctamente
                 </div>
 
                 {fotoData && (
-                  <div>
-                    <Label>Foto tomada</Label>
-                    <div className="mt-1 rounded-lg overflow-hidden border bg-black/5">
+                  <div className="space-y-2">
+                    <Label className="text-gray-300">Foto tomada</Label>
+                    <div className="rounded-lg overflow-hidden border border-white/10 bg-black/40">
                       <img
                         src={fotoData}
                         alt="Foto de evidencia"
                         className="w-full h-auto max-h-64 object-contain"
                       />
                     </div>
+                    <a
+                      href={fotoData}
+                      download={`reporte_${horaSeleccionada.replace(':','')}.jpg`}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-slate-900/60 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-slate-800 transition-all duration-200 premium-btn-hover"
+                    >
+                      <Download className="h-4 w-4 text-blue-400" /> Guardar foto en dispositivo
+                    </a>
                   </div>
                 )}
 
                 <div className="flex flex-col gap-2 pt-2">
-                  <Button size="lg" onClick={handleCompartir}>
+                  <Button size="lg" onClick={handleCompartir} className="premium-btn-hover bg-green-600 hover:bg-green-700 text-white">
                     <Send className="mr-2 h-4 w-4" /> Compartir en WhatsApp
                   </Button>
                   <div className="flex gap-2">
-                    <Button size="lg" variant="outline" className="flex-1" onClick={() => { if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank') }}>
-                      <Send className="mr-2 h-4 w-4" /> Solo texto
+                    <Button size="lg" variant="outline" className="flex-1 premium-btn-hover border-white/10 text-gray-300 hover:bg-slate-800" onClick={() => { if (mensajeWhatsApp) window.open(mensajeWhatsApp, '_blank') }}>
+                      <Send className="mr-2 h-4 w-4 text-blue-400" /> Solo texto
                     </Button>
-                    <Button size="lg" variant="outline" className="flex-1" onClick={handleCopiarTexto}>
-                      <Copy className="mr-2 h-4 w-4" /> {copiado ? "Copiado" : "Copiar texto"}
+                    <Button size="lg" variant="outline" className="flex-1 premium-btn-hover border-white/10 text-gray-300 hover:bg-slate-800" onClick={handleCopiarTexto}>
+                      <Copy className="mr-2 h-4 w-4 text-blue-400" /> {copiado ? "Copiado" : "Copiar texto"}
                     </Button>
                   </div>
                 </div>

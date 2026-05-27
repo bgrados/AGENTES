@@ -14,7 +14,7 @@ export function useRealtime<T extends Record<string, unknown> = Record<string, u
   const { supabase } = useSupabase()
 
   const subscribe = useCallback(() => {
-    const channelName = `${table}-${filter || "all"}-${Date.now()}`
+    const channelName = `realtime-${table}-${filter || "all"}`
 
     const channel = supabase
       .channel(channelName)

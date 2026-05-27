@@ -203,8 +203,8 @@ export default function UsuariosPage() {
     if (!eliminando) return
     setDeleting(true)
     const supabaseAny = supabase as any
-    await supabaseAny.from("agentes").delete().eq("usuario_id", eliminando.id)
-    await supabaseAny.from("usuarios").delete().eq("id", eliminando.id)
+    await supabaseAny.from("agentes").update({ activo: false }).eq("usuario_id", eliminando.id)
+    await supabaseAny.from("usuarios").update({ activo: false }).eq("id", eliminando.id)
     setDeleteDialogOpen(false)
     setEliminando(null)
     setDeleting(false)

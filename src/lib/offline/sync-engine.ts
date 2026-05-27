@@ -47,15 +47,15 @@ export class SyncEngine {
       const itemsToRetry: any[] = []
 
       for (const item of pendientes) {
-        // Aplicar Exponential Backoff
-        // Si intentos es 0, no hay delay. Si es 1, espera 2^1 * 1000 = 2s, etc.
-        const backoffTime = Math.min(BACKOFF_BASE_MS * Math.pow(2, item.intentos), MAX_BACKOFF_MS)
-        const timeSinceCreation = new Date().getTime() - new Date(item.created_at).getTime()
-        
-        // Si el tiempo transcurrido desde el último intento es menor al backoff, lo saltamos por ahora
-        // (En una implementación real, guardaríamos 'last_attempt_at', pero usaremos created_at para simplificar MVP)
-        // Por ahora, procesaremos todo lo que esté en cola y el backoff ocurrirá al fallar la transacción entera.
-        
+        // Exponential Backoff: saltar items cuyo tiempo de espera no ha transcurrido
+        if (item.intentos > 0) {
+          const backoffMs = Math.min(BACKOFF_BASE_MS * Math.pow(2, item.intentos), MAX_BACKOFF_MS)
+          const elapsedMs = Date.now() - new Date(item.created_at).getTime()
+          if (elapsedMs < backoffMs) {
+            continue
+          }
+        }
+
         try {
           const datos = JSON.parse(item.datos)
 

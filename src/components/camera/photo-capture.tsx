@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Camera, ImageUp, X } from "lucide-react"
 import { FOTO_CONFIG } from "@/lib/constants"
+import { compressImageToWebP } from "@/lib/camera/compression"
 
 interface PhotoCaptureProps {
   onPhoto: (url: string) => void
@@ -24,17 +25,23 @@ export function PhotoCapture({ onPhoto, onClear, fotoUrl }: PhotoCaptureProps) {
       return
     }
 
-    if (file.size > FOTO_CONFIG.MAX_SIZE) {
-      setError(`Archivo muy grande. Máximo ${FOTO_CONFIG.MAX_SIZE / 1024 / 1024}MB.`)
-      return
+    try {
+      const compressedBlob = await compressImageToWebP(file, { maxWidthOrHeight: 1280, quality: 0.8 })
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        onPhoto(ev.target?.result as string)
+        setError("")
+      }
+      reader.readAsDataURL(compressedBlob)
+    } catch (err) {
+      console.error("Error al comprimir archivo de galería:", err)
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        onPhoto(ev.target?.result as string)
+        setError("")
+      }
+      reader.readAsDataURL(file)
     }
-
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      onPhoto(ev.target?.result as string)
-      setError("")
-    }
-    reader.readAsDataURL(file)
   }
 
   const tomarFoto = async () => {
@@ -50,15 +57,26 @@ export function PhotoCapture({ onPhoto, onClear, fotoUrl }: PhotoCaptureProps) {
     input.type = "file"
     input.accept = "image/*"
     input.capture = "environment"
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (file) {
-        const reader = new FileReader()
-        reader.onload = (ev) => {
-          onPhoto(ev.target?.result as string)
-          setError("")
+        try {
+          const compressedBlob = await compressImageToWebP(file, { maxWidthOrHeight: 1280, quality: 0.8 })
+          const reader = new FileReader()
+          reader.onload = (ev) => {
+            onPhoto(ev.target?.result as string)
+            setError("")
+          }
+          reader.readAsDataURL(compressedBlob)
+        } catch (err) {
+          console.error("Error al comprimir foto tomada:", err)
+          const reader = new FileReader()
+          reader.onload = (ev) => {
+            onPhoto(ev.target?.result as string)
+            setError("")
+          }
+          reader.readAsDataURL(file)
         }
-        reader.readAsDataURL(file)
       }
     }
     input.click()
